@@ -167,6 +167,136 @@ class ChainConfig(BaseModel):
     strict_validation: bool = False  # Fail vs. warn on validation errors
 ```
 
+## System Prompts
+
+The prompt-chaining workflow uses three specialized system prompts that control the behavior of each processing step:
+
+### chain_analyze.md - Analysis Step Prompt
+
+**Purpose**: Analyze user requests and extract structured information for subsequent steps
+
+**Location**: `src/workflow/prompts/chain_analyze.md`
+
+**Responsibilities**:
+- Parse user intent from natural language requests
+- Extract key entities, concepts, and topics mentioned
+- Assess task complexity (simple, moderate, complex)
+- Gather contextual information for processing step
+
+**Output**: AnalysisOutput JSON with:
+- `intent`: Clear statement of user's primary goal
+- `key_entities`: List of important topics/concepts/entities
+- `complexity`: Complexity level assessment
+- `context`: Dictionary with additional contextual information
+
+**Example Output**:
+```json
+{
+  "intent": "Compare synchronous vs asynchronous Python code for high-concurrency APIs",
+  "key_entities": ["synchronous code", "asynchronous code", "performance", "concurrency"],
+  "complexity": "moderate",
+  "context": {
+    "domain": "backend development",
+    "scale": "1000 requests per second"
+  }
+}
+```
+
+### chain_process.md - Processing Step Prompt
+
+**Purpose**: Generate substantive content based on analysis output
+
+**Location**: `src/workflow/prompts/chain_process.md`
+
+**Responsibilities**:
+- Receive AnalysisOutput from analysis step
+- Generate domain-specific content addressing identified intent
+- Assess confidence in generated content
+- Capture metadata for traceability
+
+**Input**: AnalysisOutput from analysis step
+
+**Output**: ProcessOutput JSON with:
+- `content`: Generated content addressing the intent
+- `confidence`: Confidence score (0.0 to 1.0)
+- `metadata`: Dictionary with generation metadata
+
+**Example Output**:
+```json
+{
+  "content": "Synchronous Python code blocks each request until complete, while asynchronous code uses await...",
+  "confidence": 0.85,
+  "metadata": {
+    "generation_approach": "comparative analysis",
+    "coverage": "both approaches with examples"
+  }
+}
+```
+
+### chain_synthesize.md - Synthesis Step Prompt
+
+**Purpose**: Polish and format the final response for user consumption
+
+**Location**: `src/workflow/prompts/chain_synthesize.md`
+
+**Responsibilities**:
+- Receive ProcessOutput from processing step
+- Apply formatting and styling to content
+- Optimize response for clarity and presentation
+- Ensure output meets quality standards
+
+**Input**: ProcessOutput from processing step
+
+**Output**: SynthesisOutput JSON with:
+- `final_text`: Polished and formatted response
+- `formatting`: Applied formatting style or approach
+
+**Example Output**:
+```json
+{
+  "final_text": "# Synchronous vs Asynchronous Python\n\nSynchronous code blocks...",
+  "formatting": "markdown with clear sections and examples"
+}
+```
+
+### Data Flow Through Prompts
+
+The three prompts work together in sequence:
+
+```
+User Request
+    ↓
+chain_analyze.md (Parse & Extract)
+    ↓
+AnalysisOutput (JSON)
+    ↓
+chain_process.md (Generate)
+    ↓
+ProcessOutput (JSON)
+    ↓
+chain_synthesize.md (Polish & Format)
+    ↓
+SynthesisOutput (JSON)
+    ↓
+User Response
+```
+
+Each step's system prompt defines:
+- The agent's specific role and responsibilities
+- What information to extract or generate
+- How to structure output as valid JSON
+- Quality expectations and guidelines
+
+### JSON-Only Output Format
+
+All three prompts enforce JSON-only output:
+- No markdown code blocks or extra text
+- Valid JSON matching the corresponding Pydantic model
+- Enables strict parsing and validation in step functions
+- Ensures reliable data flow between steps
+
+This strict format is critical for prompt-chaining workflows where structured outputs feed directly into subsequent steps.
+
 ### Validation Gates
 
 Optional validation gates run between steps:

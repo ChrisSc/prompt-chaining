@@ -195,6 +195,21 @@ python console_client.py "Your prompt here"
 
 See [JWT_AUTHENTICATION.md](./JWT_AUTHENTICATION.md) for complete authentication documentation.
 
+## Prompt-Chaining Workflow
+
+The system implements a three-step prompt-chaining pattern that processes requests sequentially through specialized agents:
+
+**1. Analyze** (`chain_analyze.md`)
+Parses user requests to extract intent, key entities, complexity assessment, and contextual information. Output is structured JSON that feeds into the processing step.
+
+**2. Process** (`chain_process.md`)
+Generates substantive content addressing the identified intent from the analysis step. Includes confidence scoring and metadata capture for traceability.
+
+**3. Synthesize** (`chain_synthesize.md`)
+Polishes and formats the response with appropriate styling and optimization for user consumption. Produces the final user-ready output.
+
+Each step uses a specialized system prompt and outputs structured JSON that flows to the next step. For detailed information about system prompts and architecture, see [ARCHITECTURE.md](./ARCHITECTURE.md).
+
 ## Architecture
 
 ### Prompt-Chaining Pattern
@@ -204,18 +219,21 @@ See [JWT_AUTHENTICATION.md](./JWT_AUTHENTICATION.md) for complete authentication
 - Role: Parse user intent, extract key entities, assess complexity
 - Output: `AnalysisOutput` with structured analysis data
 - Execution: Runs with configurable timeout (default: 15s)
+- System Prompt: `src/workflow/prompts/chain_analyze.md`
 
 **Processing Agent** (Content Generator)
 - Model: Configurable (default: Claude Haiku 4.5)
 - Role: Generate content based on analysis results
 - Output: `ProcessOutput` with generated content and confidence
 - Execution: Runs with configurable timeout (default: 30s)
+- System Prompt: `src/workflow/prompts/chain_process.md`
 
 **Synthesis Agent** (Polish & Format)
 - Model: Configurable (default: Claude Haiku 4.5)
 - Role: Combine and format content into final response
 - Output: `SynthesisOutput` with polished final text
 - Execution: Runs with configurable timeout (default: 20s)
+- System Prompt: `src/workflow/prompts/chain_synthesize.md`
 
 ### Performance Characteristics
 
@@ -354,12 +372,14 @@ Key environment variables (from `ChainConfig`):
 
 This is a **generic template** with a simple example workflow. To adapt for your use case:
 
-### 1. Update System Prompts
+### 1. Update Chain Step Prompts
 
 Edit `src/workflow/prompts/`:
-- `analysis_system.md` - Define analysis step behavior (intent parsing, entity extraction)
-- `processing_system.md` - Define processing step behavior (content generation)
-- `synthesis_system.md` - Define synthesis step behavior (formatting, polishing)
+- `chain_analyze.md` - Customize analysis step behavior (intent parsing, entity extraction)
+- `chain_process.md` - Customize processing step behavior (content generation)
+- `chain_synthesize.md` - Customize synthesis step behavior (formatting, polishing)
+
+See [CLAUDE.md Customization Guide](./CLAUDE.md#customization-guide) for detailed guidance on prompt customization and JSON output requirements.
 
 ### 2. Customize Chain Models
 

@@ -530,11 +530,72 @@ Comprehensive type hints, strict mypy checking in `pyproject.toml`.
 
 Template provides infrastructure. Customize for your domain:
 
-### 1. System Prompts
-Edit `src/workflow/prompts/`:
-- `analysis_system.md` - Analysis step instructions for intent parsing and entity extraction
-- `processing_system.md` - Processing step instructions for content generation
-- `synthesis_system.md` - Synthesis step instructions for formatting and polishing
+### 1. Chain Step Prompts
+
+The three system prompts control how each step processes information. These are the primary customization points for domain-specific behavior:
+
+**Files to customize:**
+- `src/workflow/prompts/chain_analyze.md` - Customize intent parsing and entity extraction for your domain
+- `src/workflow/prompts/chain_process.md` - Customize content generation logic based on analysis output
+- `src/workflow/prompts/chain_synthesize.md` - Customize formatting and polishing of final response
+
+**Important Notes:**
+
+Each prompt must output valid JSON matching its Pydantic model:
+
+1. **chain_analyze.md** outputs `AnalysisOutput`:
+   ```json
+   {
+     "intent": "user's goal",
+     "key_entities": ["entity1", "entity2"],
+     "complexity": "simple|moderate|complex",
+     "context": { "key": "value" }
+   }
+   ```
+
+2. **chain_process.md** outputs `ProcessOutput`:
+   ```json
+   {
+     "content": "generated content",
+     "confidence": 0.85,
+     "metadata": { "key": "value" }
+   }
+   ```
+
+3. **chain_synthesize.md** outputs `SynthesisOutput`:
+   ```json
+   {
+     "final_text": "polished response",
+     "formatting": "markdown|plain|html"
+   }
+   ```
+
+The step functions (Tasks 5.1-5.3) parse these JSON outputs and validate them against the models. JSON-only output format is mandatory.
+
+**When to customize each:**
+- `chain_analyze.md`: When you need domain-specific intent parsing, different entity types, or custom complexity assessment
+- `chain_process.md`: When you need domain-specific content generation, different output structure, or custom confidence scoring
+- `chain_synthesize.md`: When you need domain-specific formatting, styling, or final validation
+
+**Example customization - Marketing domain:**
+
+For a marketing copywriting tool, customize `chain_analyze.md` to extract marketing-specific context:
+```markdown
+### Extract Marketing Context
+- Identify target audience
+- Note tone and voice preferences
+- Capture brand personality traits
+- Extract call-to-action requirements
+```
+
+Then customize `chain_process.md` to generate marketing copy:
+```markdown
+### Generate Marketing Copy
+- Write persuasive copy addressing the identified audience
+- Incorporate brand voice and personality
+- Include relevant call-to-action
+- Score persuasiveness and brand alignment
+```
 
 ### 2. Chain Models
 Edit `src/workflow/models/chains.py`:
