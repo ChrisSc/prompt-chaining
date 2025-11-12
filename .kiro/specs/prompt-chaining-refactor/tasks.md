@@ -99,20 +99,20 @@ Refer to these documents for implementation details, patterns, and examples.
     - _Requirements: 2.3, 3.1, 3.3, 4.5_
     - _Documentation: See `./documentation/langchain/INDEX.md` → `oss/python/langchain/streaming.md` for streaming patterns with LangChain_
 
-- [ ] 6. Implement LangGraph StateGraph orchestration
-  - [ ] 6.1 Create `src/workflow/chains/graph.py` with StateGraph initialization
+- [x] 6. Implement LangGraph StateGraph orchestration
+  - [x] 6.1 Create `src/workflow/chains/graph.py` with StateGraph initialization
     - Initialize StateGraph with ChainState
     - Add nodes for analyze_step, process_step, synthesize_step
     - Add conditional edges from analyze to process and process to synthesize
     - Compile graph with checkpointer for memory
     - _Requirements: 3.1, 3.2_
     - _Documentation: See `./documentation/langchain/INDEX.md` → LangGraph section → `oss/python/langgraph/how-tos/` for graph construction patterns_
-  - [ ] 6.2 Create graph streaming and invocation methods
+  - [x] 6.2 Create graph streaming and invocation methods
     - Implement async method to invoke graph with initial input
     - Implement async generator to stream graph output with astream()
     - Handle state updates and message accumulation
     - _Requirements: 3.1, 4.5_
-  - [ ] 6.3 Integrate graph with FastAPI chat endpoint
+  - [x] 6.3 Integrate graph with FastAPI chat endpoint
     - Update `/v1/chat/completions` endpoint to use chain_graph instead of orchestrator
     - Convert ChainState messages to OpenAI ChatCompletionChunk format
     - Stream final_response through SSE
