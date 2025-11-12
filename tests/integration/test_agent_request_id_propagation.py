@@ -6,22 +6,22 @@ Anthropic API via extra_headers. Verifies propagation through Worker, Synthesize
 and Orchestrator agents, and tests graceful handling when request ID is missing.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from orchestrator_worker.agents.orchestrator import Orchestrator
-from orchestrator_worker.agents.synthesizer import Synthesizer
-from orchestrator_worker.agents.worker import Worker
-from orchestrator_worker.config import Settings
-from orchestrator_worker.models.internal import (
+from workflow.agents.orchestrator import Orchestrator
+from workflow.agents.synthesizer import Synthesizer
+from workflow.agents.worker import Worker
+from workflow.config import Settings
+from workflow.models.internal import (
     AggregatedResult,
     TaskRequest,
     TaskResult,
     TokenUsage,
 )
-from orchestrator_worker.models.openai import ChatCompletionRequest, ChatMessage
-from orchestrator_worker.utils.request_context import (
+from workflow.models.openai import ChatCompletionRequest, ChatMessage
+from workflow.utils.request_context import (
     _request_id_var,
     get_request_id,
     set_request_id,
@@ -368,9 +368,7 @@ class TestRequestIdErrorPropagation:
 
         # Mock API error
         worker.client = AsyncMock()
-        worker.client.messages.create = AsyncMock(
-            side_effect=Exception("API Error")
-        )
+        worker.client.messages.create = AsyncMock(side_effect=Exception("API Error"))
 
         await worker.initialize()
 
@@ -403,7 +401,7 @@ class TestRequestIdWithTokenTracking:
         assert get_request_id() == request_id
 
         # Simulate token tracking operations
-        from orchestrator_worker.utils.token_tracking import calculate_cost
+        from workflow.utils.token_tracking import calculate_cost
 
         cost = calculate_cost("claude-haiku-4-5-20251001", 100, 50)
 

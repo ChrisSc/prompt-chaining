@@ -386,7 +386,7 @@ docker-compose exec orchestrator-worker whoami
 docker-compose exec orchestrator-worker ls -la /app
 
 # Expected output:
-# src/orchestrator_worker
+# src/workflow
 # scripts/
 # logs/ (owned by appuser)
 ```
@@ -415,7 +415,7 @@ docker-compose exec orchestrator-worker \
 docker-compose exec orchestrator-worker ps aux
 
 # Expected output:
-# appuser    1 ... python -m uvicorn orchestrator_worker.main:app
+# appuser    1 ... python -m uvicorn workflow.main:app
 
 # Check port listening
 docker-compose exec orchestrator-worker netstat -tlnp

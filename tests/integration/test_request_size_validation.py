@@ -11,8 +11,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from orchestrator_worker.main import create_app
-from orchestrator_worker.models.openai import (
+from workflow.main import create_app
+from workflow.models.openai import (
     ChatCompletionChunk,
     ChatCompletionStreamChoice,
     ChoiceDelta,
@@ -57,7 +57,7 @@ def valid_jwt_token() -> str:
 @pytest.fixture
 def app_with_mocked_orchestrator():
     """Create FastAPI app with mocked orchestrator."""
-    with patch("orchestrator_worker.main.Orchestrator") as mock_orchestrator_class:
+    with patch("workflow.main.Orchestrator") as mock_orchestrator_class:
         mock_orchestrator = AsyncMock()
         mock_orchestrator.model = "claude-sonnet-4-5-20250929"
         mock_orchestrator.client = True  # Mark as initialized

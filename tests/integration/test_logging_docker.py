@@ -283,7 +283,7 @@ services:
                 "orchestrator-worker",
                 "python",
                 "-c",
-                "from orchestrator_worker.config import Settings; "
+                "from workflow.config import Settings; "
                 "import os; os.environ['LOG_LEVEL'] = 'CRITICAL'; "
                 "s = Settings(); print(s.log_level)",
             ],

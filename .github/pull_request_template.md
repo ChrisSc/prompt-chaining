@@ -122,7 +122,7 @@ Before requesting a review, please confirm:
 
 - [ ] I have read [CONTRIBUTING.md](https://github.com/ChrisSc/agentic-orchestrator-worker-template/blob/main/CONTRIBUTING.md)
 - [ ] I have followed the [critical development rules](https://github.com/ChrisSc/agentic-orchestrator-worker-template/blob/main/CONTRIBUTING.md#critical-development-rules)
-- [ ] My code uses relative imports (`orchestrator_worker.*`, not `src.orchestrator_worker.*`)
+- [ ] My code uses relative imports (`workflow.*`, not `src.workflow.*`)
 - [ ] My code uses async/await for all I/O operations
 - [ ] I have tested with `fastapi dev`, not `uvicorn` directly
 - [ ] I have added tests that prove my fix is effective or that my feature works

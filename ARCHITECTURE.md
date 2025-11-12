@@ -1,38 +1,49 @@
 # Architecture Overview
 
-This document describes the technical architecture of the Agentic Service Template.
+This document describes the technical architecture of the Prompt-Chaining Workflow Template.
 
-## Core Design Pattern: Orchestrator-Worker
+## Core Design Pattern: Prompt-Chaining
 
-The system implements a production-grade orchestrator-worker pattern for multi-agent coordination.
+The system implements a production-grade prompt-chaining pattern for sequential multi-step AI workflows using LangGraph's StateGraph.
+
+### Overview
+
+The prompt-chaining pattern orchestrates sequential processing through three distinct steps, each optimized for its specific role:
+
+1. **Analysis Step**: Parse user intent, identify key entities, assess complexity
+2. **Processing Step**: Generate content based on analysis results
+3. **Synthesis Step**: Combine and polish results into final response
+
+Each step operates independently with its own Claude model, configuration, and validation gates between steps. State flows through the workflow via `ChainState`, a LangGraph TypedDict that accumulates messages and step outputs.
 
 ### Components
 
-#### 1. Orchestrator Agent
-- **Model**: Claude Sonnet 4.5 (expensive, intelligent)
-- **Purpose**: Smart coordinator
+#### 1. Analysis Agent
+- **Model**: Configurable (default: Claude Haiku 4.5)
+- **Purpose**: Intent parsing and understanding
 - **Responsibilities**:
   - Parse and understand user intent
-  - Decompose complex tasks into subtasks
-  - Spawn N worker instances (one per subtask)
-  - Coordinate parallel execution via `asyncio.gather()`
-  - Aggregate and synthesize results
-  - Stream final response to user
+  - Extract key entities and concepts
+  - Assess task complexity
+  - Provide context for processing
+  - Return `AnalysisOutput` with intent, entities, complexity
 
-#### 2. Worker Agent
-- **Model**: Claude Haiku 4.5 (cheap, fast)
-- **Purpose**: Task executor
+#### 2. Processing Agent
+- **Model**: Configurable (default: Claude Haiku 4.5)
+- **Purpose**: Content generation
 - **Responsibilities**:
-  - Execute specific, focused tasks
-  - Return structured results
-  - Operate in isolation (own API context)
+  - Generate content based on analysis results
+  - Operate on extracted intent and context
+  - Return structured `ProcessOutput` with content and confidence
+  - Provide metadata for traceability
 
-#### 3. Synthesizer Agent
-- **Model**: Claude Haiku 4.5 (cheap, fast)
-- **Purpose**: Response aggregator and polisher
+#### 3. Synthesis Agent
+- **Model**: Configurable (default: Claude Haiku 4.5)
+- **Purpose**: Response polishing and formatting
 - **Responsibilities**:
-  - Aggregate raw results from workers
-  - Synthesize into cohesive, polished response
+  - Combine processed content into final response
+  - Apply formatting and styling
+  - Return `SynthesisOutput` with polished text
   - Stream final response to client
 
 ### Coordination Flow
@@ -46,13 +57,19 @@ User Request
     ↓
 [JWT Authentication]
     ↓
-Orchestrator: Analyze & Decompose
+LangGraph StateGraph Initialization
     ↓
-Spawn N Workers (parallel)
+Analysis Step: Parse Intent & Extract Context
     ↓
-asyncio.gather() → [Worker1, Worker2, ..., WorkerN]
+[Validation Gate]
     ↓
-Synthesizer: Aggregate & Polish
+Processing Step: Generate Content
+    ↓
+[Validation Gate]
+    ↓
+Synthesis Step: Polish & Format
+    ↓
+[Validation Gate]
     ↓
 Stream Response (SSE format)
     ↓
@@ -63,29 +80,127 @@ Client
 
 ### Key Characteristics
 
-1. **One Declaration, N Instances**: Orchestrator spawns exactly as many workers as needed
-2. **True Parallelism**: All workers execute simultaneously via `asyncio.gather()`
-3. **Isolated Contexts**: Each worker has its own AsyncAnthropic client and context window
-4. **Graceful Coordination**: `return_exceptions=True` prevents one failure from canceling others
-5. **Cost Optimization**: Smart orchestrator + cheap workers = optimal economics
-6. **Defense-in-Depth Security**: Multiple layers of validation and protection
+1. **Sequential Execution**: Steps execute in order with state flowing through `ChainState`
+2. **Message Accumulation**: `add_messages` reducer maintains conversation continuity
+3. **Validation Gates**: Optional validation between steps with configurable strictness
+4. **Independent Configuration**: Each step has its own model, tokens, temperature, and prompt
+5. **Structured Outputs**: Type-safe step results (AnalysisOutput, ProcessOutput, SynthesisOutput)
+6. **State Management**: Central `ChainState` TypedDict tracks messages and step outputs
+7. **Defense-in-Depth Security**: Multiple layers of validation and protection
+
+## Prompt-Chaining Pattern Details
+
+### State Management with ChainState
+
+The `ChainState` TypedDict (from `src/workflow/models/chains.py`) maintains state across all processing steps:
+
+```python
+class ChainState(TypedDict):
+    messages: Annotated[list[BaseMessage], add_messages]
+    # Accumulated messages through chain - uses add_messages reducer for proper merging
+
+    analysis: dict[str, Any] | None
+    # Output from analysis step containing intent, entities, complexity
+
+    processed_content: str | None
+    # Output from processing step containing generated content
+
+    final_response: str | None
+    # Final synthesized output from synthesis step
+
+    step_metadata: dict[str, Any]
+    # Tracking metadata for the entire chain execution (timing, costs, etc.)
+```
+
+**Key Features**:
+- **Message Accumulation**: `add_messages` reducer merges new messages with existing ones, maintaining conversation continuity
+- **Step Outputs**: Each step populates its own field (analysis, processed_content, final_response)
+- **Metadata Tracking**: Captures timing, costs, and other observability metrics across all steps
+
+### Step Output Models
+
+Each step returns a type-safe structured model:
+
+**AnalysisOutput**:
+```python
+class AnalysisOutput(BaseModel):
+    intent: str  # User's primary intent
+    key_entities: list[str]  # Key concepts mentioned
+    complexity: str  # "simple", "moderate", or "complex"
+    context: dict[str, Any]  # Additional contextual information
+```
+
+**ProcessOutput**:
+```python
+class ProcessOutput(BaseModel):
+    content: str  # Generated content
+    confidence: float  # 0.0 to 1.0 confidence score
+    metadata: dict[str, Any]  # Generation metadata
+```
+
+**SynthesisOutput**:
+```python
+class SynthesisOutput(BaseModel):
+    final_text: str  # Polished and formatted response
+    formatting: str  # Applied formatting style
+```
+
+### Configuration with ChainConfig
+
+Complete workflow configuration (from `src/workflow/models/chains.py`):
+
+```python
+class ChainStepConfig(BaseModel):
+    model: str  # Claude model ID
+    max_tokens: int  # Maximum tokens to generate
+    temperature: float  # 0.0-2.0 sampling temperature
+    system_prompt_file: str  # System prompt filename
+
+class ChainConfig(BaseModel):
+    analyze: ChainStepConfig  # Analysis step config
+    process: ChainStepConfig  # Processing step config
+    synthesize: ChainStepConfig  # Synthesis step config
+    analyze_timeout: int = 15  # Analysis timeout (1-270 seconds)
+    process_timeout: int = 30  # Processing timeout (1-270 seconds)
+    synthesize_timeout: int = 20  # Synthesis timeout (1-270 seconds)
+    enable_validation: bool = True  # Enable validation gates
+    strict_validation: bool = False  # Fail vs. warn on validation errors
+```
+
+### Validation Gates
+
+Optional validation gates run between steps:
+- **After Analysis**: Verify intent extraction and entity identification
+- **After Processing**: Verify content quality and confidence threshold
+- **After Synthesis**: Verify final output meets quality standards
+
+Configurable via `enable_validation` and `strict_validation` parameters.
+
+### LangGraph Integration
+
+The workflow uses `StateGraph` to orchestrate the sequential steps:
+- Each step is a graph node
+- Transitions between steps are deterministic (no conditional branching by default)
+- State flows through ChainState with proper reducer merging
+- Async execution via `astream()` for token-by-token output
 
 ## Performance Model
 
 ### Time Complexity
-- **Sequential**: O(N) where N = number of tasks
-- **Parallel**: O(1) - constant time, limited by longest task
+- **Prompt-Chaining**: O(N) where N = number of sequential steps
+- **Total Time**: Sum of all step execution times + network latency
+- **Typical**: 3-8 seconds for analysis + processing + synthesis
 
 ### Cost Complexity
-- **Same as sequential**: O(N) - tokens used don't change
-- **Speedup**: 5-20x depending on task count
+- **Same as sequential processing**: O(N) - tokens used equals sum of all steps
+- **Optimization**: Each step can use appropriate model size (Haiku for most, Sonnet if needed)
 
 ### Real-World Measurements
 ```
-2 workers:  ~15s  (2x speedup vs sequential)
-3 workers:  ~15s  (3x speedup vs sequential)
-5 workers:  ~16s  (5x speedup vs sequential)
-10 workers: ~18s  (10x speedup vs sequential)
+Analysis step:    ~1-2s (intent parsing, entity extraction)
+Processing step:  ~2-4s (content generation)
+Synthesis step:   ~1-2s (formatting and polishing)
+Total request:    ~4-8s (plus network overhead)
 ```
 
 ## Technology Stack
@@ -93,11 +208,13 @@ Client
 ### Framework
 - **FastAPI**: Modern async web framework
 - **Uvicorn**: ASGI server
-- **Pydantic**: Data validation and settings
+- **Pydantic v2**: Data validation and settings
 
 ### AI Integration
 - **Anthropic SDK**: Claude API client
-- **AsyncAnthropic**: Async client for parallel operations
+- **AsyncAnthropic**: Async client for efficient operations
+- **LangChain 1.0.0+**: LLM interactions and message handling
+- **LangGraph 1.0.0+**: StateGraph for multi-step workflow orchestration
 - **Streaming**: Native support for SSE streaming
 
 ### Development
@@ -427,7 +544,7 @@ This enables end-to-end correlation across all systems.
 ```json
 {
   "level": "INFO",
-  "logger": "orchestrator_worker.api.v1.chat",
+  "logger": "workflow.api.v1.chat",
   "message": "Chat completion request completed",
   "request_id": "req_1762674924016",
   "model": "orchestrator-worker",
@@ -638,14 +755,23 @@ See CLAUDE.md "Circuit Breaker & Retry Logic" section for configuration details.
 
 ## Extensibility Points
 
-The template is designed for easy customization:
+The template is designed for easy customization of the prompt-chaining workflow:
 
-1. **System Prompts**: Text files in `prompts/` directory
-2. **Internal Models**: Domain-specific models in `models/internal.py`
-3. **Agent Logic**: Orchestration and execution logic in `agents/`
-4. **Configuration**: Environment-based settings in `config.py`
-5. **API Endpoints**: Additional routes in `api/` directory
-6. **Middleware**: Custom request/response processing in `middleware/` directory
+1. **System Prompts**: Text files in `src/workflow/prompts/` directory
+   - `analysis_system.md`: Analysis step instructions
+   - `processing_system.md`: Processing step instructions
+   - `synthesis_system.md`: Synthesis step instructions
+2. **Chain Models**: Workflow models in `src/workflow/models/chains.py`
+   - Extend `AnalysisOutput`, `ProcessOutput`, `SynthesisOutput` for domain data
+   - Customize `ChainConfig` with additional parameters
+3. **Internal Models**: Domain-specific models in `src/workflow/models/internal.py`
+   - Add domain-specific validation and business logic
+4. **Workflow Agents**: Step execution logic in `src/workflow/agents/`
+   - Customize analysis, processing, and synthesis agent behavior
+5. **Configuration**: Environment-based settings in `src/workflow/config.py`
+   - Add domain-specific configuration parameters
+6. **API Endpoints**: Additional routes in `src/workflow/api/` directory
+7. **Middleware**: Custom request/response processing in `src/workflow/middleware/` directory
 
 ## Deployment
 

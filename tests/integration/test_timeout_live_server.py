@@ -105,7 +105,7 @@ class TestTimeoutConfigurationValues:
 
     def test_worker_coordination_timeout_default_45_seconds(self):
         """Verify worker coordination timeout is set to 45 seconds."""
-        from orchestrator_worker.config import Settings
+        from workflow.config import Settings
 
         settings = Settings(
             anthropic_api_key="test-" + "x" * 30,
@@ -116,7 +116,7 @@ class TestTimeoutConfigurationValues:
 
     def test_synthesis_timeout_default_30_seconds(self):
         """Verify synthesis timeout is set to 30 seconds."""
-        from orchestrator_worker.config import Settings
+        from workflow.config import Settings
 
         settings = Settings(
             anthropic_api_key="test-" + "x" * 30,
@@ -127,7 +127,7 @@ class TestTimeoutConfigurationValues:
 
     def test_timeout_values_in_valid_range(self):
         """Verify timeout values are within valid range (1-270)."""
-        from orchestrator_worker.config import Settings
+        from workflow.config import Settings
 
         # Valid configurations
         for worker_timeout in [1, 45, 120, 270]:
@@ -223,7 +223,7 @@ class TestTimeoutErrorResponses:
 
     def test_timeout_error_has_correct_structure(self):
         """Verify StreamingTimeoutError creates correct error response."""
-        from orchestrator_worker.utils.errors import StreamingTimeoutError
+        from workflow.utils.errors import StreamingTimeoutError
 
         error = StreamingTimeoutError(phase="worker coordination", timeout_seconds=45)
 
@@ -240,7 +240,7 @@ class TestTimeoutErrorResponses:
 
     def test_synthesis_timeout_error_has_correct_structure(self):
         """Verify synthesis timeout error has correct structure."""
-        from orchestrator_worker.utils.errors import StreamingTimeoutError
+        from workflow.utils.errors import StreamingTimeoutError
 
         error = StreamingTimeoutError(phase="synthesis", timeout_seconds=30)
 

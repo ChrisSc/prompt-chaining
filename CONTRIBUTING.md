@@ -107,13 +107,13 @@ These rules are **non-negotiable** and must be followed in all contributions:
 
 **✅ Correct:**
 ```python
-from orchestrator_worker.config import Settings
-from orchestrator_worker.agents.base import Agent
+from workflow.config import Settings
+from workflow.agents.base import Agent
 ```
 
 **❌ Wrong:**
 ```python
-from src.orchestrator_worker.config import Settings  # Will break!
+from src.workflow.config import Settings  # Will break!
 ```
 
 **Why:** FastAPI CLI (`fastapi dev`) requires relative imports for proper module discovery. Absolute imports starting with `src.` will cause import errors.
@@ -122,13 +122,13 @@ from src.orchestrator_worker.config import Settings  # Will break!
 
 **✅ Correct:**
 ```bash
-fastapi dev src/orchestrator_worker/main.py
+fastapi dev src/workflow/main.py
 ./scripts/dev.sh  # Uses fastapi dev internally
 ```
 
 **❌ Wrong:**
 ```bash
-uvicorn src.orchestrator_worker.main:app  # Don't use directly
+uvicorn src.workflow.main:app  # Don't use directly
 ```
 
 **Why:** FastAPI CLI provides better auto-reload, error messages, and module discovery than uvicorn directly.
@@ -151,7 +151,7 @@ All functions and methods must have complete type hints:
 
 ```python
 from typing import AsyncIterator
-from orchestrator_worker.models.openai import ChatCompletionChunk
+from workflow.models.openai import ChatCompletionChunk
 
 async def process(self, request: TaskRequest) -> AsyncIterator[ChatCompletionChunk]:
     """Process a task request and yield streaming chunks."""
@@ -190,7 +190,7 @@ git checkout -b fix/bug-description
 
 ### 2. Make Your Changes
 
-- **Code:** Modify files in `src/orchestrator_worker/`
+- **Code:** Modify files in `src/workflow/`
 - **Tests:** Add/update tests in `tests/`
 - **Docs:** Update relevant documentation files
 
@@ -325,7 +325,7 @@ All three must pass before creating a PR.
 
 **These changes stay in YOUR fork:**
 
-- Update system prompts in `src/orchestrator_worker/prompts/`
+- Update system prompts in `src/workflow/prompts/`
 - Modify internal models in `models/internal.py` for your domain
 - Customize agent logic in `agents/` for your workflows
 - Add domain-specific endpoints
@@ -444,7 +444,7 @@ Technical approach and key implementation details
 **Problem:** `ModuleNotFoundError: No module named 'src'`
 
 **Solution:**
-- Check imports use `orchestrator_worker.*`, not `src.orchestrator_worker.*`
+- Check imports use `workflow.*`, not `src.workflow.*`
 - Verify package installed: `pip install -e ".[dev]"`
 - Ensure virtual environment is activated
 
@@ -453,7 +453,7 @@ Technical approach and key implementation details
 **Problem:** `fastapi dev` can't find the app
 
 **Solution:**
-- Use full path: `fastapi dev src/orchestrator_worker/main.py`
+- Use full path: `fastapi dev src/workflow/main.py`
 - Check that `app = create_app()` exists at module level in main.py
 - Verify imports use relative paths
 

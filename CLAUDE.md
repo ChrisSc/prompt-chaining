@@ -159,29 +159,35 @@ docker-compose exec orchestrator-worker python -m pytest tests/ -v
 
 ## Architecture Overview
 
-### Three-Agent Pattern
+### Prompt-Chaining Pattern
 
-**Orchestrator** (`agents/orchestrator.py`)
-- Model: Claude Sonnet 4.5 (smart coordinator)
-- Parses intent, determines worker count, spawns tasks, coordinates parallel execution, collects results
+**Analysis Agent** (`src/workflow/agents/analysis.py`)
+- Model: Configurable (default: Claude Haiku 4.5)
+- Parses user intent, extracts key entities, assesses complexity, returns AnalysisOutput
 
-**Worker** (`agents/worker.py`)
-- Model: Claude Haiku 4.5 (fast executor)
-- Executes one task, returns structured TaskResult, operates in isolation
+**Processing Agent** (`src/workflow/agents/processing.py`)
+- Model: Configurable (default: Claude Haiku 4.5)
+- Generates content based on analysis results, returns ProcessOutput with confidence
 
-**Synthesizer** (`agents/synthesizer.py`)
-- Model: Claude Haiku 4.5 (aggregator)
-- Aggregates worker results, synthesizes polished response, streams to client
+**Synthesis Agent** (`src/workflow/agents/synthesis.py`)
+- Model: Configurable (default: Claude Haiku 4.5)
+- Polishes and formats content, returns SynthesisOutput with final response
+
+### Orchestration via LangGraph
+- Uses LangGraph StateGraph for sequential step execution
+- State flows through ChainState TypedDict with add_messages reducer
+- Validation gates between steps (configurable strictness)
+- Step-specific timeouts for each phase
 
 ### Performance
-- Time complexity: O(1) regardless of worker count
-- Cost: O(N) same as sequential execution
-- Result: 5-20x speedup at no additional cost
+- Time complexity: O(N) where N = number of sequential steps (typically 3)
+- Cost: O(N) same as sequential processing
+- Result: Enables complex multi-step reasoning with structured outputs
 
 ### Import System
 Use relative imports only (required for FastAPI CLI discovery):
-- Correct: `from orchestrator_worker.config import Settings`
-- Wrong: `from src.orchestrator_worker.config import Settings`
+- Correct: `from workflow.config import Settings`
+- Wrong: `from src.workflow.config import Settings`
 
 ### Configuration Architecture
 - Settings class in `config.py` uses Pydantic v2 BaseSettings with .env loading
@@ -401,7 +407,7 @@ LOKI_URL=http://...   # Optional: log aggregation
 {
   "timestamp": "2025-11-09 03:00:00,000",
   "level": "INFO",
-  "logger": "orchestrator_worker.api.v1.chat",
+  "logger": "workflow.api.v1.chat",
   "message": "Chat completion request completed",
   "request_id": "req_1762674924016",
   "user": "test-user",
@@ -465,7 +471,7 @@ Comprehensive token tracking for cost monitoring:
 
 **Cost calculation:**
 ```python
-from orchestrator_worker.utils.token_tracking import calculate_cost, aggregate_token_metrics
+from workflow.utils.token_tracking import calculate_cost, aggregate_token_metrics
 
 cost = calculate_cost("claude-haiku-4-5-20251001", 500, 200)  # Returns cost object
 total_tokens, total_cost = aggregate_token_metrics(usage_list=[...], model_list=[...])
@@ -525,39 +531,53 @@ Comprehensive type hints, strict mypy checking in `pyproject.toml`.
 Template provides infrastructure. Customize for your domain:
 
 ### 1. System Prompts
-Edit `src/orchestrator_worker/prompts/`:
-- `orchestrator_system.md` - Orchestrator behavior
-- `worker_system.md` - Worker behavior
-- `synthesizer_system.md` - Synthesizer behavior
+Edit `src/workflow/prompts/`:
+- `analysis_system.md` - Analysis step instructions for intent parsing and entity extraction
+- `processing_system.md` - Processing step instructions for content generation
+- `synthesis_system.md` - Synthesis step instructions for formatting and polishing
 
-### 2. Internal Models
-Edit `src/orchestrator_worker/models/internal.py`:
-- Replace `TaskRequest` with domain model
-- Replace `TaskResult` with domain model
-- Add any domain models needed
+### 2. Chain Models
+Edit `src/workflow/models/chains.py`:
+- Extend `AnalysisOutput` with domain-specific analysis fields
+- Extend `ProcessOutput` with domain-specific content fields
+- Extend `SynthesisOutput` with domain-specific formatting fields
+- Customize `ChainConfig` with additional workflow parameters
 
-### 3. Orchestrator Logic
-Edit `src/orchestrator_worker/agents/orchestrator.py`:
-- Customize `_determine_task_count()` for your use case
-- Update `_coordinate_workers()` if needed
-- Modify `_stream_aggregated_result()` aggregation
+### 3. Internal Models
+Edit `src/workflow/models/internal.py`:
+- Add domain-specific models and validation
+- Define custom data structures for your workflow
 
-### 4. Worker Logic
-Edit `src/orchestrator_worker/agents/worker.py`:
-- Customize `process_task()` for domain
-- Update `_build_prompt()` for domain-specific formatting
+### 4. Analysis Agent Logic
+Edit `src/workflow/agents/analysis.py`:
+- Customize intent parsing for your domain
+- Add domain-specific entity extraction
+- Modify complexity assessment logic
 
-### 5. Configuration
-Update `.env.example` and `config.py`:
+### 5. Processing Agent Logic
+Edit `src/workflow/agents/processing.py`:
+- Implement domain-specific content generation
+- Adjust confidence scoring
+- Add metadata capture
+
+### 6. Synthesis Agent Logic
+Edit `src/workflow/agents/synthesis.py`:
+- Customize formatting and polishing
+- Implement domain-specific styling
+- Add final validation
+
+### 7. Configuration
+Update `.env.example` and `src/workflow/config.py`:
+- Configure model IDs for each step
+- Adjust token limits and timeouts per phase
 - Add domain-specific settings
-- Adjust model IDs, temperatures, token limits
 
 ## Development Workflow
 
 ### FastAPI CLI - IMPORTANT
 Always use `fastapi dev` (not `uvicorn`). Provides auto-reload, better errors, proper module discovery.
-- Correct: `fastapi dev src/orchestrator_worker/main.py`
-- Wrong: `uvicorn src.orchestrator_worker.main:app`
+- Correct: `fastapi dev src/workflow/main.py`
+- Wrong: `uvicorn src.workflow.main:app`
 
 ### Testing Strategy
 - Unit tests: Components (models, config, utilities)
@@ -574,7 +594,7 @@ FastAPI auto-generates docs at `/docs`:
 Use for: sanity checks, edge cases, API demos, regression testing.
 
 ### Development Workflow
-1. Update `src/orchestrator_worker/` files
+1. Update `src/workflow/` files
 2. Add/update tests in `tests/`
 3. `./scripts/test.sh` and `./scripts/format.sh`
 4. Verify: `./scripts/dev.sh` and test endpoints
@@ -584,12 +604,12 @@ Use for: sanity checks, edge cases, API demos, regression testing.
 
 ### Import Errors
 `ModuleNotFoundError: No module named 'src'`
-- Check imports use `orchestrator_worker.*` not `src.orchestrator_worker.*`
+- Check imports use `workflow.*` not `src.workflow.*`
 - Install: `pip install -e ".[dev]"`
 
 ### FastAPI Discovery
 `fastapi dev` can't find app:
-- Ensure full path: `fastapi dev src/orchestrator_worker/main.py`
+- Ensure full path: `fastapi dev src/workflow/main.py`
 - Verify `app = create_app()` at module level
 - Activate virtual environment
 

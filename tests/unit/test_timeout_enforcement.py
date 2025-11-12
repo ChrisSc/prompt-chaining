@@ -6,8 +6,8 @@ in the config module.
 
 import pytest
 
-from orchestrator_worker.config import Settings
-from orchestrator_worker.utils.errors import StreamingTimeoutError, TemplateServiceError
+from workflow.config import Settings
+from workflow.utils.errors import StreamingTimeoutError, TemplateServiceError
 
 
 class TestStreamingTimeoutError:

@@ -13,9 +13,9 @@ import jwt
 import pytest
 from fastapi.testclient import TestClient
 
-from orchestrator_worker.config import Settings
-from orchestrator_worker.main import create_app
-from orchestrator_worker.models.openai import (
+from workflow.config import Settings
+from workflow.main import create_app
+from workflow.models.openai import (
     ChatCompletionChunk,
     ChatCompletionStreamChoice,
     ChoiceDelta,
@@ -98,7 +98,7 @@ def invalid_signature_token(jwt_settings: Settings) -> str:
 @pytest.fixture
 def app_with_mocks(jwt_settings: Settings):
     """Create FastAPI app with mocked orchestrator."""
-    with patch("orchestrator_worker.main.Orchestrator") as mock_orchestrator_class:
+    with patch("workflow.main.Orchestrator") as mock_orchestrator_class:
         mock_orchestrator = AsyncMock()
         mock_orchestrator.model = "claude-sonnet-4-5-20250929"
         mock_orchestrator_class.return_value = mock_orchestrator

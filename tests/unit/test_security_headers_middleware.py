@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from orchestrator_worker.config import Settings
-from orchestrator_worker.middleware.security_headers import security_headers_middleware
+from workflow.config import Settings
+from workflow.middleware.security_headers import security_headers_middleware
 
 
 @pytest.fixture

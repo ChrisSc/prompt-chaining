@@ -13,11 +13,9 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from orchestrator_worker.main import create_app
-from orchestrator_worker.utils.request_context import (
+from workflow.main import create_app
+from workflow.utils.request_context import (
     _request_id_var,
-    get_request_id,
-    set_request_id,
 )
 
 
@@ -174,7 +172,8 @@ class TestMultipleEndpointsRequestId:
 
         # Mock token for testing
         import jwt
-        from orchestrator_worker.config import Settings
+
+        from workflow.config import Settings
 
         settings = Settings()
         token = jwt.encode({"sub": "test-user"}, settings.jwt_secret_key, algorithm="HS256")

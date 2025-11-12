@@ -10,9 +10,9 @@ from unittest.mock import patch
 
 import pytest
 
-from orchestrator_worker.config import Settings
-from orchestrator_worker.utils.logging import JSONFormatter, get_logger, setup_logging
-from orchestrator_worker.utils.token_tracking import calculate_cost
+from workflow.config import Settings
+from workflow.utils.logging import JSONFormatter, get_logger, setup_logging
+from workflow.utils.token_tracking import calculate_cost
 
 
 class TestLoggingLevels:
@@ -20,7 +20,7 @@ class TestLoggingLevels:
 
     def test_debug_logging_health_check(self, caplog: pytest.LogCaptureFixture) -> None:
         """Test DEBUG logging is emitted for health check requests."""
-        from orchestrator_worker.api.health import health_check
+        from workflow.api.health import health_check
 
         with caplog.at_level(logging.DEBUG):
             # Simulate health check
@@ -40,7 +40,7 @@ class TestLoggingLevels:
 
     def test_debug_logging_readiness_check(self, caplog: pytest.LogCaptureFixture) -> None:
         """Test DEBUG logging is emitted for readiness check requests."""
-        from orchestrator_worker.api.health import readiness_check
+        from workflow.api.health import readiness_check
 
         with caplog.at_level(logging.DEBUG):
             # Simulate readiness check
@@ -326,7 +326,7 @@ class TestSecurityHeadersLogging:
 
     def test_security_headers_debug_logging_https(self, caplog: pytest.LogCaptureFixture) -> None:
         """Test DEBUG logging for security headers with HTTPS."""
-        from orchestrator_worker.middleware.security_headers import logger as sec_logger
+        from workflow.middleware.security_headers import logger as sec_logger
 
         with caplog.at_level(logging.DEBUG):
             sec_logger.debug(
@@ -345,7 +345,7 @@ class TestSecurityHeadersLogging:
 
     def test_security_headers_debug_logging_http(self, caplog: pytest.LogCaptureFixture) -> None:
         """Test DEBUG logging for security headers with HTTP."""
-        from orchestrator_worker.middleware.security_headers import logger as sec_logger
+        from workflow.middleware.security_headers import logger as sec_logger
 
         with caplog.at_level(logging.DEBUG):
             sec_logger.debug(
@@ -368,7 +368,7 @@ class TestRequestSizeLogging:
 
     def test_request_size_warning_logging(self, caplog: pytest.LogCaptureFixture) -> None:
         """Test WARNING logging for oversized requests."""
-        from orchestrator_worker.middleware.request_size import logger as size_logger
+        from workflow.middleware.request_size import logger as size_logger
 
         with caplog.at_level(logging.WARNING):
             size_logger.warning(
@@ -389,7 +389,7 @@ class TestRequestSizeLogging:
 
     def test_request_size_debug_logging_pass(self, caplog: pytest.LogCaptureFixture) -> None:
         """Test DEBUG logging when request size validation passes."""
-        from orchestrator_worker.middleware.request_size import logger as size_logger
+        from workflow.middleware.request_size import logger as size_logger
 
         with caplog.at_level(logging.DEBUG):
             size_logger.debug(

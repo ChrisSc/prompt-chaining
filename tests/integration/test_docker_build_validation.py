@@ -239,8 +239,8 @@ class TestDockerImageConfiguration:
             if result.returncode == 0 and result.stdout.strip():
                 try:
                     cmd = json.loads(result.stdout)
-                    # Should reference orchestrator_worker.main:app
-                    assert "orchestrator_worker.main:app" in str(cmd)
+                    # Should reference workflow.main:app
+                    assert "workflow.main:app" in str(cmd)
                 except json.JSONDecodeError:
                     pass
         except FileNotFoundError:
