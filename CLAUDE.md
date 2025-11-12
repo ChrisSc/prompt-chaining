@@ -45,7 +45,185 @@ This installs all dependencies including LangChain 1.0.0+ and LangGraph 1.0.0+, 
 - `LOG_LEVEL` (default: INFO), `LOG_FORMAT` (default: json)
 
 ### Model Configuration
-- `ORCHESTRATOR_MODEL`, `WORKER_MODEL`, `SYNTHESIZER_MODEL` (all default: claude-haiku-4-5-20251001)
+- `ORCHESTRATOR_MODEL`, `WORKER_MODEL`, `SYNTHESIZER_MODEL` (deprecated - use CHAIN_* variables instead)
+
+### Prompt-Chaining Configuration
+
+**Per-Step Model Selection**:
+- `CHAIN_ANALYZE_MODEL` - Model for analysis step (default: claude-haiku-4-5-20251001)
+- `CHAIN_PROCESS_MODEL` - Model for processing step (default: claude-haiku-4-5-20251001)
+- `CHAIN_SYNTHESIZE_MODEL` - Model for synthesis step (default: claude-haiku-4-5-20251001)
+
+**Per-Step Token Limits**:
+- `CHAIN_ANALYZE_MAX_TOKENS` - Max tokens for analyze step (default: 2048, range: 1-8000)
+- `CHAIN_PROCESS_MAX_TOKENS` - Max tokens for process step (default: 2048, range: 1-8000)
+- `CHAIN_SYNTHESIZE_MAX_TOKENS` - Max tokens for synthesize step (default: 2048, range: 1-8000)
+
+**Per-Step Temperature**:
+- `CHAIN_ANALYZE_TEMPERATURE` - Temperature for analyze (default: 0.5, range: 0.0-2.0)
+- `CHAIN_PROCESS_TEMPERATURE` - Temperature for process (default: 0.7, range: 0.0-2.0)
+- `CHAIN_SYNTHESIZE_TEMPERATURE` - Temperature for synthesize (default: 0.5, range: 0.0-2.0)
+
+**Per-Step Timeouts**:
+- `CHAIN_ANALYZE_TIMEOUT` - Analysis step timeout in seconds (default: 15, range: 1-270)
+- `CHAIN_PROCESS_TIMEOUT` - Processing step timeout in seconds (default: 30, range: 1-270)
+- `CHAIN_SYNTHESIZE_TIMEOUT` - Synthesis step timeout in seconds (default: 20, range: 1-270)
+
+**Validation Gates**:
+- `CHAIN_ENABLE_VALIDATION` - Enable validation gates between steps (default: true)
+- `CHAIN_STRICT_VALIDATION` - Fail fast on validation errors (default: false)
+
+### Chain Configuration Reference
+
+Each step in the prompt-chaining workflow can be independently tuned for your specific use case.
+
+#### Step Models
+
+**Analyze Step** (Intent Extraction)
+- Purpose: Parse user intent, extract entities, assess complexity
+- Typical model: Claude Haiku (fast, cost-efficient)
+- Use Sonnet if: Analysis requires complex reasoning or domain expertise
+- Upgrade rationale: Complex intent parsing with ambiguous user requests
+
+**Process Step** (Content Generation)
+- Purpose: Generate substantive content based on analysis
+- Typical model: Claude Haiku (fast, cost-efficient) or Claude Sonnet (higher quality)
+- Use Sonnet if: Quality/accuracy critical, content needs advanced reasoning
+- Upgrade rationale: High stakes content generation where quality directly impacts user experience
+
+**Synthesize Step** (Formatting & Polish)
+- Purpose: Format and polish final response for presentation
+- Typical model: Claude Haiku (fast, cost-efficient)
+- Use Sonnet if: Complex formatting or styling requirements
+- Upgrade rationale: Rare; formatting usually doesn't need advanced reasoning
+
+#### Temperature Tuning Guide
+
+**Analyze Step** (default: 0.5)
+- 0.0-0.3: Deterministic, consistent intent extraction (best for consistency)
+- 0.5: Balanced (default, good starting point)
+- 0.7-1.0: More creative entity interpretation (use if results too rigid)
+
+**Process Step** (default: 0.7)
+- 0.5: More focused, deterministic content (use for factual accuracy needs)
+- 0.7: Balanced, good for most use cases (default)
+- 0.9-1.0: More diverse, creative responses (use when variety desired)
+- 1.5-2.0: Highly creative/experimental (rarely used, can be incoherent)
+
+**Synthesize Step** (default: 0.5)
+- 0.3-0.5: Consistent, predictable formatting (best for structured output)
+- 0.5-0.7: Balanced formatting with some variation
+- Higher: Variable formatting (rarely needed for polish step)
+
+#### Token Limits
+
+**Analyze Step** (default: 2048)
+- Typical need: 500-1000 tokens (intent extraction is concise)
+- Increase to 2048 if: Complex intent parsing needs more tokens
+- Decrease to 1000 if: Simple intent extraction with tight budgets
+
+**Process Step** (default: 2048)
+- Typical need: 1000-3000 tokens (content generation needs space)
+- Increase to 4000+ if: Generating long-form content
+- Decrease to 1000 if: Brief responses only
+
+**Synthesize Step** (default: 2048)
+- Typical need: 500-1500 tokens (formatting is relatively concise)
+- Increase to 2048+ if: Complex formatting or styling
+- Decrease to 1000 if: Simple formatting only
+
+#### Timeout Configuration
+
+**Analyze Step** (default: 15 seconds)
+- 10s: Very fast (tight latency SLAs, simple intent)
+- 15s: Balanced (default, most use cases)
+- 30s: Slow models or complex analysis
+- When to adjust:
+  - Decrease if: p99 latency critical, intent extraction quick
+  - Increase if: Using Sonnet or complex analysis
+
+**Process Step** (default: 30 seconds)
+- 15s: Fast models, simple generation
+- 30s: Balanced (default, most use cases)
+- 60s: Sonnet or long-form content
+- When to adjust:
+  - Decrease if: Latency-critical, using Haiku
+  - Increase if: Using Sonnet or generating 2000+ token responses
+
+**Synthesize Step** (default: 20 seconds)
+- 10s: Very fast (tight latency SLAs)
+- 20s: Balanced (default)
+- 30s: Complex formatting or slower models
+- When to adjust:
+  - Decrease if: Streaming responsiveness critical
+  - Increase if: Complex formatting or large outputs
+
+**Typical Execution Times** (on Haiku models):
+- Analyze: 1-2 seconds
+- Process: 2-4 seconds
+- Synthesize: 1-2 seconds
+- Total: 4-8 seconds plus network latency
+
+#### Cost Optimization Tips
+
+**Cost Breakdown by Model**:
+- Haiku: $1 per 1M input tokens, $5 per 1M output tokens
+- Sonnet: $3 per 1M input tokens, $15 per 1M output tokens
+
+**Example Cost Calculations** (per request):
+```
+All-Haiku Config (typical):
+  Analyze:   250 input + 150 output  = $0.00125
+  Process:   400 input + 400 output  = $0.00300
+  Synthesize: 500 input + 400 output = $0.00350
+  Total: ~$0.00775 per request
+
+Haiku + Sonnet + Haiku (balanced):
+  Analyze:    250 input + 150 output (Haiku) = $0.00125
+  Process:    400 input + 400 output (Sonnet) = $0.00240
+  Synthesize: 500 input + 400 output (Haiku) = $0.00350
+  Total: ~$0.00715 per request (slightly cheaper due to Process optimization)
+
+All-Sonnet Config (rarely needed):
+  Analyze:    250 input + 150 output = $0.00120
+  Process:    400 input + 400 output = $0.00240
+  Synthesize: 500 input + 400 output = $0.00270
+  Total: ~$0.00630 per request (cheaper due to Sonnet pricing on higher token counts)
+```
+
+**Cost Optimization Strategies**:
+1. Start with all-Haiku config (cheapest, fastest)
+2. If quality issues, upgrade Process step to Sonnet
+3. Only upgrade Analyze/Synthesize if needed for specific domain
+4. Reduce token limits if responses consistently under limits
+5. Adjust temperature to find optimal quality/cost tradeoff
+
+**Monitoring Costs**:
+- Check logs for `total_cost_usd` entries: `grep "total_cost_usd" logs.json`
+- Cost is calculated per request and logged at INFO level
+- Adjust models/tokens based on actual cost metrics
+
+#### Validation Gates Configuration
+
+**Enable/Disable Validation**:
+```env
+CHAIN_ENABLE_VALIDATION=true   # Enable quality gates
+CHAIN_STRICT_VALIDATION=false  # Warn on errors (vs. fail)
+```
+
+**What Gets Validated**:
+- After Analyze: Intent must be present and non-empty
+- After Process: Content non-empty AND confidence >= 0.5
+
+**Strict Mode** (`CHAIN_STRICT_VALIDATION=true`):
+- Fails immediately on validation error
+- Returns error to client
+- Use for: Strict quality requirements
+
+**Lenient Mode** (`CHAIN_STRICT_VALIDATION=false`):
+- Logs warning, continues processing
+- Attempts to handle gracefully
+- Use for: Fault-tolerant systems
 
 ### Timeouts (seconds)
 - `WORKER_COORDINATION_TIMEOUT` - Parallel execution (default: 45, range: 1-270)
