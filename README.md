@@ -483,14 +483,160 @@ curl http://localhost:8000/health/
 
 ## Configuration
 
+### Chain Configuration & Tuning Guide
+
+The prompt-chaining workflow is highly configurable. Each step can be independently tuned for your use case by adjusting models, token limits, temperature, and timeouts.
+
+#### Quick Configuration Examples
+
+**Fast & Cost-Optimized** (recommended starting point):
+```env
+CHAIN_ANALYZE_MODEL=claude-haiku-4-5-20251001
+CHAIN_ANALYZE_MAX_TOKENS=1000
+CHAIN_ANALYZE_TEMPERATURE=0.3
+
+CHAIN_PROCESS_MODEL=claude-haiku-4-5-20251001
+CHAIN_PROCESS_MAX_TOKENS=2000
+CHAIN_PROCESS_TEMPERATURE=0.7
+
+CHAIN_SYNTHESIZE_MODEL=claude-haiku-4-5-20251001
+CHAIN_SYNTHESIZE_MAX_TOKENS=1000
+CHAIN_SYNTHESIZE_TEMPERATURE=0.5
+
+CHAIN_ANALYZE_TIMEOUT=15
+CHAIN_PROCESS_TIMEOUT=30
+CHAIN_SYNTHESIZE_TIMEOUT=20
+```
+Cost per request: ~$0.0059 | Speed: 4-8s total
+
+**Balanced Quality** (best for most use cases):
+```env
+# Faster analysis with low temperature for consistency
+CHAIN_ANALYZE_MODEL=claude-haiku-4-5-20251001
+CHAIN_ANALYZE_MAX_TOKENS=1000
+CHAIN_ANALYZE_TEMPERATURE=0.3
+
+# Upgrade to Sonnet for better quality content generation
+CHAIN_PROCESS_MODEL=claude-sonnet-4-5-20250929
+CHAIN_PROCESS_MAX_TOKENS=2000
+CHAIN_PROCESS_TEMPERATURE=0.7
+
+# Back to Haiku for efficient formatting
+CHAIN_SYNTHESIZE_MODEL=claude-haiku-4-5-20251001
+CHAIN_SYNTHESIZE_MAX_TOKENS=1000
+CHAIN_SYNTHESIZE_TEMPERATURE=0.5
+
+CHAIN_ANALYZE_TIMEOUT=15
+CHAIN_PROCESS_TIMEOUT=45
+CHAIN_SYNTHESIZE_TIMEOUT=20
+```
+Cost per request: ~$0.0107 | Speed: 5-10s total
+
+**High Accuracy** (expensive, use only when quality critical):
+```env
+CHAIN_ANALYZE_MODEL=claude-sonnet-4-5-20250929
+CHAIN_ANALYZE_MAX_TOKENS=1500
+CHAIN_ANALYZE_TEMPERATURE=0.5
+
+CHAIN_PROCESS_MODEL=claude-sonnet-4-5-20250929
+CHAIN_PROCESS_MAX_TOKENS=3000
+CHAIN_PROCESS_TEMPERATURE=0.7
+
+CHAIN_SYNTHESIZE_MODEL=claude-sonnet-4-5-20250929
+CHAIN_SYNTHESIZE_MAX_TOKENS=1500
+CHAIN_SYNTHESIZE_TEMPERATURE=0.5
+
+CHAIN_ANALYZE_TIMEOUT=30
+CHAIN_PROCESS_TIMEOUT=60
+CHAIN_SYNTHESIZE_TIMEOUT=30
+```
+Cost per request: ~$0.0177 | Speed: 8-15s total
+
+#### Temperature Tuning
+
+Temperature controls randomness in LLM responses:
+
+| Step | Temperature | Use Case | Example |
+|------|-------------|----------|---------|
+| **Analyze** | 0.0-0.3 | Consistent, deterministic intent parsing | Always extract the same intent from similar requests |
+| **Analyze** | 0.5 (default) | Balanced intent extraction | Good starting point for most use cases |
+| **Analyze** | 0.7-1.0 | Creative entity interpretation | Explore multiple aspects of user intent |
+| **Process** | 0.5 | Factual, consistent content | Technical documentation, fact-based responses |
+| **Process** | 0.7 (default) | Balanced, diverse responses | Good for most content generation |
+| **Process** | 0.9+ | Creative, experimental content | Creative writing, brainstorming mode |
+| **Synthesize** | 0.3-0.5 | Consistent formatting | Structured outputs, templates |
+| **Synthesize** | 0.5-0.7 | Balanced formatting | Default polish and formatting |
+
+#### Token Limits
+
+Adjust token limits based on expected response complexity:
+
+| Step | Default | For Concise Responses | For Detailed Responses |
+|------|---------|----------------------|----------------------|
+| **Analyze** | 2048 | 500-1000 | 1500-2048 |
+| **Process** | 2048 | 1000-1500 | 2048-4000+ |
+| **Synthesize** | 2048 | 500-1000 | 1500-2048 |
+
+**Tips**:
+- Monitor actual token usage in logs: `grep "output_tokens" logs.json`
+- Reduce limits if responses consistently short
+- Increase limits if responses get truncated
+
+#### Timeout Tuning
+
+Timeouts prevent runaway requests and control latency:
+
+| Step | Default | Latency-Critical | Complex Tasks |
+|------|---------|------------------|----------------|
+| **Analyze** | 15s | 10s | 30s |
+| **Process** | 30s | 15s | 60s |
+| **Synthesize** | 20s | 10s | 30s |
+
+**When to adjust**:
+- Decrease if: p99 latency SLA is tight (e.g., mobile app)
+- Increase if: Using Sonnet, generating long responses, or complex reasoning
+
+Example for latency-critical service:
+```env
+CHAIN_ANALYZE_TIMEOUT=10
+CHAIN_PROCESS_TIMEOUT=15
+CHAIN_SYNTHESIZE_TIMEOUT=10
+```
+
+#### Decision Tree: Choosing Your Configuration
+
+```
+Is your task primarily text extraction/analysis?
+├─ YES: Use all-Haiku config
+│       Temperature: analyze=0.3, process=0.7, synthesize=0.5
+│       Tokens: analyze=1000, process=2000, synthesize=1000
+│       Timeouts: 15s/30s/20s
+│
+└─ NO: Does content generation require complex reasoning?
+   ├─ YES (high stakes, accuracy critical):
+   │   └─ Use Haiku analyze + Sonnet process + Haiku synthesize
+   │       Temperature: analyze=0.3, process=0.7, synthesize=0.5
+   │       Tokens: analyze=1000, process=3000, synthesize=1000
+   │       Timeouts: 15s/45s/20s (Process slower for quality)
+   │
+   └─ NO (general purpose):
+       ├─ Try all-Haiku first
+       │
+       └─ If quality issues:
+           ├─ First: Increase process temperature to 0.9
+           ├─ Second: Increase process tokens to 3000
+           ├─ Third: Upgrade process to Sonnet
+           └─ Last: Upgrade other steps if needed
+```
+
 ### Request Timeout Settings
 
-For information on configuring request timeouts, including separate phase-specific controls for each step, see the **Request Timeout Enforcement** section in [CLAUDE.md](./CLAUDE.md).
+For information on configuring request timeouts, including separate phase-specific controls for each step, see the **Chain Configuration Reference** section in [CLAUDE.md](./CLAUDE.md).
 
 Key environment variables (from `ChainConfig`):
-- `ANALYZE_TIMEOUT` - Maximum time for analysis step (default: 15s, range: 1-270s)
-- `PROCESS_TIMEOUT` - Maximum time for processing step (default: 30s, range: 1-270s)
-- `SYNTHESIZE_TIMEOUT` - Maximum time for synthesis step (default: 20s, range: 1-270s)
+- `CHAIN_ANALYZE_TIMEOUT` - Maximum time for analysis step (default: 15s, range: 1-270s)
+- `CHAIN_PROCESS_TIMEOUT` - Maximum time for processing step (default: 30s, range: 1-270s)
+- `CHAIN_SYNTHESIZE_TIMEOUT` - Maximum time for synthesis step (default: 20s, range: 1-270s)
 
 ## Customization Guide
 
@@ -668,10 +814,10 @@ Critical variables:
 - `JWT_SECRET_KEY` - **Required** for authentication (minimum 32 characters)
 - `JWT_ALGORITHM` - JWT algorithm (default: HS256)
 
-**Orchestrator Models** (legacy, for backward compatibility):
-- `ORCHESTRATOR_MODEL` - Model for orchestrator (default: claude-sonnet-4-5-20250929)
-- `WORKER_MODEL` - Model for workers (default: claude-haiku-4-5-20251001)
-- `SYNTHESIZER_MODEL` - Model for synthesizer (default: claude-haiku-4-5-20251001)
+**Orchestrator Models** (deprecated - use CHAIN_* variables instead):
+- `ORCHESTRATOR_MODEL` - **(deprecated)** Model for orchestrator (default: claude-sonnet-4-5-20250929)
+- `WORKER_MODEL` - **(deprecated)** Model for workers (default: claude-haiku-4-5-20251001)
+- `SYNTHESIZER_MODEL` - **(deprecated)** Model for synthesizer (default: claude-haiku-4-5-20251001)
 
 **Prompt-Chain Step Models** (per-step configuration):
 - `CHAIN_ANALYZE_MODEL` - Model for analysis step (default: claude-haiku-4-5-20251001)

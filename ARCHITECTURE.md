@@ -1569,6 +1569,266 @@ class ChainConfig(BaseModel):
 - Synthesis step: 1-2 seconds (plus streaming overhead)
 - Total request: 4-8 seconds + network latency
 
+## Configuration Best Practices
+
+This section provides production guidance for optimizing the prompt-chaining workflow for your specific use case.
+
+### Cost Optimization Strategies
+
+**Cost Breakdown by Step** (typical Haiku model execution):
+```
+Analyze Step (Intent Extraction)
+  - Input: 250 tokens (user message + system prompt)
+  - Output: 150 tokens (intent, entities, complexity)
+  - Cost: (250 * $1/1M) + (150 * $5/1M) = $0.00100
+
+Process Step (Content Generation)
+  - Input: 400 tokens (analysis output + system prompt + context)
+  - Output: 400 tokens (generated content)
+  - Cost: (400 * $1/1M) + (400 * $5/1M) = $0.00240
+
+Synthesize Step (Formatting & Polishing)
+  - Input: 500 tokens (process output + system prompt + context)
+  - Output: 400 tokens (formatted response)
+  - Cost: (500 * $1/1M) + (400 * $5/1M) = $0.00250
+
+Total per request: $0.00590
+```
+
+**Configuration Cost Impact** (per request, 1000 user message tokens):
+
+| Configuration | Analyze Cost | Process Cost | Synthesize Cost | Total Cost | Speed | Use Case |
+|--|--|--|--|--|--|--|
+| All-Haiku | $0.00100 | $0.00240 | $0.00250 | $0.00590 | 4-8s | Cost-optimized, fast |
+| Haiku + Sonnet + Haiku | $0.00100 | $0.00720 | $0.00250 | $0.01070 | 5-10s | Balanced quality/cost |
+| All-Sonnet | $0.00300 | $0.00720 | $0.00750 | $0.01770 | 8-15s | Max quality (expensive) |
+
+**Cost Optimization Strategies**:
+1. Start with all-Haiku baseline ($0.01/req)
+2. Monitor actual costs: `grep "total_cost_usd" logs.json`
+3. Upgrade Process step first if quality issues (biggest quality impact per dollar)
+4. Only upgrade Analyze/Synthesize if domain-specific requirements demand it
+5. Reduce token limits if responses consistently under max
+6. Use lower temperature (0.3-0.5) to get more deterministic, shorter responses
+
+### Performance Tuning
+
+**Latency Analysis by Step** (typical execution on Haiku):
+```
+Analyze Step (intent parsing)
+  - Network roundtrip: 200ms
+  - LLM inference: 800ms
+  - Subtotal: ~1.0s (range: 0.5s-2.0s)
+
+Process Step (content generation)
+  - Network roundtrip: 300ms
+  - LLM inference: 2.0-3.0s
+  - Subtotal: ~2.5s (range: 1.5s-4.0s)
+
+Synthesize Step (formatting + streaming)
+  - Network roundtrip: 300ms
+  - LLM inference: 1.0-1.5s
+  - Streaming overhead: 0.5s
+  - Subtotal: ~2.0s (range: 1.0s-2.5s)
+
+Total Request Time: 5.5s (range: 4.0s-8.5s depending on model and complexity)
+```
+
+**Timeout Adjustment for Different SLAs**:
+
+| SLA Target | Analyze | Process | Synthesize | Notes |
+|--|--|--|--|--|
+| p99 < 5s (mobile) | 10s | 15s | 10s | Tight timeouts, use Haiku only, low tokens |
+| p99 < 8s (web) | 15s | 30s | 20s | Default, balanced for most use cases |
+| p99 < 15s (batch) | 30s | 60s | 30s | Loose timeouts, can use Sonnet, high tokens |
+
+**Optimization for Low-Latency Services**:
+```env
+# Tight timeouts force quick completion or failure
+CHAIN_ANALYZE_TIMEOUT=10
+CHAIN_PROCESS_TIMEOUT=15
+CHAIN_SYNTHESIZE_TIMEOUT=10
+
+# Smaller token limits mean shorter responses
+CHAIN_ANALYZE_MAX_TOKENS=800
+CHAIN_PROCESS_MAX_TOKENS=1200
+CHAIN_SYNTHESIZE_MAX_TOKENS=800
+
+# Lower temperature means more deterministic (faster) responses
+CHAIN_ANALYZE_TEMPERATURE=0.3
+CHAIN_PROCESS_TEMPERATURE=0.5
+CHAIN_SYNTHESIZE_TEMPERATURE=0.3
+
+# Use only Haiku for speed
+CHAIN_ANALYZE_MODEL=claude-haiku-4-5-20251001
+CHAIN_PROCESS_MODEL=claude-haiku-4-5-20251001
+CHAIN_SYNTHESIZE_MODEL=claude-haiku-4-5-20251001
+```
+
+### Common Configuration Patterns
+
+**Pattern 1: Cost-Optimized** (best for volume services)
+```env
+# All-Haiku: cheapest option (~$0.008 per request)
+CHAIN_ANALYZE_MODEL=claude-haiku-4-5-20251001
+CHAIN_PROCESS_MODEL=claude-haiku-4-5-20251001
+CHAIN_SYNTHESIZE_MODEL=claude-haiku-4-5-20251001
+
+# Reduce tokens for brevity
+CHAIN_ANALYZE_MAX_TOKENS=1000
+CHAIN_PROCESS_MAX_TOKENS=1500
+CHAIN_SYNTHESIZE_MAX_TOKENS=800
+
+# Lower temperature for determinism
+CHAIN_ANALYZE_TEMPERATURE=0.3
+CHAIN_PROCESS_TEMPERATURE=0.5
+CHAIN_SYNTHESIZE_TEMPERATURE=0.3
+
+# Default timeouts
+CHAIN_ANALYZE_TIMEOUT=15
+CHAIN_PROCESS_TIMEOUT=30
+CHAIN_SYNTHESIZE_TIMEOUT=20
+```
+Cost: ~$0.006-0.010/req | Speed: 4-8s
+
+**Pattern 2: Balanced Quality** (best for most applications)
+```env
+# Haiku for analysis (fast intent parsing)
+CHAIN_ANALYZE_MODEL=claude-haiku-4-5-20251001
+CHAIN_ANALYZE_MAX_TOKENS=1000
+CHAIN_ANALYZE_TEMPERATURE=0.3
+
+# Sonnet for generation (quality matters here)
+CHAIN_PROCESS_MODEL=claude-sonnet-4-5-20250929
+CHAIN_PROCESS_MAX_TOKENS=2500
+CHAIN_PROCESS_TEMPERATURE=0.7
+
+# Haiku for synthesis (efficient formatting)
+CHAIN_SYNTHESIZE_MODEL=claude-haiku-4-5-20251001
+CHAIN_SYNTHESIZE_MAX_TOKENS=1000
+CHAIN_SYNTHESIZE_TEMPERATURE=0.5
+
+# Slightly longer timeouts for Sonnet
+CHAIN_ANALYZE_TIMEOUT=15
+CHAIN_PROCESS_TIMEOUT=45
+CHAIN_SYNTHESIZE_TIMEOUT=20
+```
+Cost: ~$0.008-0.012/req | Speed: 5-10s
+
+**Pattern 3: Accuracy-Optimized** (for high-stakes applications)
+```env
+# All-Sonnet: best quality (~$0.020+ per request)
+CHAIN_ANALYZE_MODEL=claude-sonnet-4-5-20250929
+CHAIN_PROCESS_MODEL=claude-sonnet-4-5-20250929
+CHAIN_SYNTHESIZE_MODEL=claude-sonnet-4-5-20250929
+
+# Higher token limits for detailed responses
+CHAIN_ANALYZE_MAX_TOKENS=2000
+CHAIN_PROCESS_MAX_TOKENS=4000
+CHAIN_SYNTHESIZE_MAX_TOKENS=2000
+
+# Balanced temperature for quality
+CHAIN_ANALYZE_TEMPERATURE=0.5
+CHAIN_PROCESS_TEMPERATURE=0.7
+CHAIN_SYNTHESIZE_TEMPERATURE=0.5
+
+# Longer timeouts for careful processing
+CHAIN_ANALYZE_TIMEOUT=30
+CHAIN_PROCESS_TIMEOUT=60
+CHAIN_SYNTHESIZE_TIMEOUT=30
+```
+Cost: ~$0.015-0.025/req | Speed: 8-15s
+
+**Pattern 4: Latency-Optimized** (for real-time systems)
+```env
+# All-Haiku for speed
+CHAIN_ANALYZE_MODEL=claude-haiku-4-5-20251001
+CHAIN_PROCESS_MODEL=claude-haiku-4-5-20251001
+CHAIN_SYNTHESIZE_MODEL=claude-haiku-4-5-20251001
+
+# Tight token limits force brevity
+CHAIN_ANALYZE_MAX_TOKENS=800
+CHAIN_PROCESS_MAX_TOKENS=1200
+CHAIN_SYNTHESIZE_MAX_TOKENS=600
+
+# Low temperature for determinism
+CHAIN_ANALYZE_TEMPERATURE=0.2
+CHAIN_PROCESS_TEMPERATURE=0.4
+CHAIN_SYNTHESIZE_TEMPERATURE=0.2
+
+# Strict timeouts enforce fast completion
+CHAIN_ANALYZE_TIMEOUT=8
+CHAIN_PROCESS_TIMEOUT=12
+CHAIN_SYNTHESIZE_TIMEOUT=8
+```
+Cost: ~$0.005-0.008/req | Speed: 2-4s
+
+### Troubleshooting Configuration Issues
+
+**Problem: Validation failures (intent empty, low confidence)**
+
+Symptoms:
+- Frequent "intent field is required and must be non-empty" errors
+- Process step producing content with confidence < 0.5
+
+Solutions:
+1. Check analyze step temperature: try 0.5-0.7 for more flexibility
+2. Increase analyze max_tokens to 1500 for more detailed extraction
+3. Review chain_analyze.md prompt - may need adjustment for your domain
+4. Upgrade analyze to Sonnet if dealing with ambiguous user requests
+
+**Problem: Timeouts (requests exceeding CHAIN_*_TIMEOUT)**
+
+Symptoms:
+- Logs showing "timeout" errors during chain execution
+- Clients receiving partial responses or errors
+
+Solutions:
+1. Increase the timeout for the failing step (15s → 30s, 30s → 60s)
+2. Reduce token limits if generating too much content
+3. Switch to faster models (Sonnet → Haiku, but only after trying other options)
+4. Check network latency (add 0.5s per step for high-latency networks)
+5. Monitor actual step execution times in logs to set appropriate timeouts
+
+**Problem: Low quality outputs**
+
+Symptoms:
+- Generated content is shallow, inaccurate, or missing key information
+- User complaints about response quality
+
+Solutions:
+1. Increase process step temperature: 0.7 → 0.9 for more diverse responses
+2. Increase process max_tokens: 2000 → 3000+ for more detailed content
+3. Upgrade process step to Sonnet for better reasoning
+4. Review/improve chain_process.md prompt for better instructions
+5. Increase analyze temperature to 0.7 for more thorough analysis
+
+**Problem: High costs**
+
+Symptoms:
+- logs show total_cost_usd consistently above budget
+- Cost per request higher than expected
+
+Solutions:
+1. Check which step uses most tokens: `grep "input_tokens\|output_tokens" logs.json`
+2. Reduce token limits for high-consumption steps
+3. Lower temperature for more concise responses (0.7 → 0.3-0.5)
+4. Switch expensive steps to Haiku (Sonnet → Haiku)
+5. Monitor token usage and adjust limits based on actual needs
+
+**Problem: Streaming stops or feels slow**
+
+Symptoms:
+- Synthesis step doesn't stream smoothly to client
+- Delays between token arrivals
+
+Solutions:
+1. Reduce synthesize max_tokens to force shorter outputs
+2. Increase synthesize temperature slightly (0.3 → 0.5) for less determinism = faster inference
+3. Check STREAMING_CHUNK_BUFFER env var (default 0, increase to 100 for batching)
+4. Increase synthesize_timeout if timeout is cutting off streaming
+5. Check network bandwidth and latency
+
 ## LangGraph StateGraph Implementation
 
 ### Graph Builder (`build_chain_graph` in src/workflow/chains/graph.py)
