@@ -365,11 +365,23 @@ Edge functions handle multiple input types transparently:
 
 ### LangGraph Integration
 
-The workflow uses `StateGraph` to orchestrate the sequential steps:
-- Each step is a graph node
-- Transitions between steps are deterministic (no conditional branching by default)
-- State flows through ChainState with proper reducer merging
-- Async execution via `astream()` for token-by-token output
+The workflow uses `StateGraph` (from `src/workflow/chains/graph.py`) to orchestrate the sequential steps:
+
+**Graph Architecture** (`build_chain_graph(config: ChainConfig)`):
+- **Nodes**: `analyze`, `process`, `synthesize`, `error` - each step is an independent graph node
+- **Edges**: START → analyze → (validation gate) → process → (validation gate) → synthesize → END (or error → END)
+- **Conditional Edges**: Validation gates route to error handler on validation failures
+- **State Management**: ChainState TypedDict with `add_messages` reducer maintains message accumulation
+- **Async Execution**: Supports both non-streaming (`invoke_chain`) and streaming (`stream_chain`) modes
+
+**Execution Modes**:
+1. **invoke_chain()**: Non-streaming execution via `graph.ainvoke()` - useful for testing and batch processing
+2. **stream_chain()**: Streaming execution via `graph.astream()` with `stream_mode="messages"` - enables token-by-token output during synthesis
+
+**Error Handling**:
+- Validation gates route invalid outputs to `error_step`
+- Error step creates user-friendly error messages
+- Both success and error paths terminate at END node
 
 ## Performance Model
 
@@ -949,9 +961,11 @@ The prompt-chaining workflow is implemented through three step functions orchest
 The step functions implement the three sequential LLM calls that compose the prompt-chaining pattern:
 
 - **File Location**: `src/workflow/chains/steps.py`
+- **Graph Orchestration**: `src/workflow/chains/graph.py` - LangGraph StateGraph implementation
 - **Integration**: Called by LangGraph StateGraph via conditional edges (validation gates)
 - **State Management**: All steps read from and write to `ChainState` TypedDict
 - **Token Tracking**: Each step extracts usage metadata and logs costs
+- **Message Conversion**: `src/workflow/utils/message_conversion.py` - OpenAI ↔ LangChain message format conversion
 
 ### Step 1: Analyze Step (analyze_step)
 
@@ -1176,6 +1190,80 @@ class ChainConfig(BaseModel):
 - Processing step: 2-4 seconds
 - Synthesis step: 1-2 seconds (plus streaming overhead)
 - Total request: 4-8 seconds + network latency
+
+## LangGraph StateGraph Implementation
+
+### Graph Builder (`build_chain_graph` in src/workflow/chains/graph.py)
+
+The `build_chain_graph(config: ChainConfig)` function constructs the complete workflow graph:
+
+```
+START
+  ↓
+analyze_step
+  ↓
+should_proceed_to_process (validation gate)
+  ├─→ "process" (valid)
+  └─→ "error" (invalid)
+  ↓
+process_step
+  ↓
+should_proceed_to_synthesize (validation gate)
+  ├─→ "synthesize" (valid)
+  └─→ "error" (invalid)
+  ↓
+synthesize_step
+  ↓
+END
+```
+
+**Graph Properties**:
+- **Nodes**: 4 nodes (analyze, process, synthesize, error)
+- **Edges**: 6 edges (START→analyze, analyze→process/error, process→synthesize/error, both→END)
+- **Conditional Logic**: Validation gates between steps route to error handler on failures
+- **State Type**: ChainState TypedDict with add_messages reducer for message accumulation
+- **Compilation**: Graph compiled once at application startup for performance
+
+### Execution Modes
+
+**Non-Streaming Mode** (`invoke_chain`):
+```python
+final_state = await graph.ainvoke(initial_state)
+# Returns complete final ChainState after all steps
+# Useful for testing, batch processing, or scenarios where streaming not needed
+```
+
+**Streaming Mode** (`stream_chain`):
+```python
+async for state_update in stream_chain(graph, initial_state, config):
+    # Each state_update is yielded as it arrives
+    # Synthesize step yields token-by-token updates via astream
+    # Enables real-time streaming to client
+```
+
+### Message Conversion Utilities
+
+The `src/workflow/utils/message_conversion.py` module bridges OpenAI and LangChain message formats:
+
+**`convert_openai_to_langchain_messages(messages: list[ChatMessage])`**:
+- Converts incoming OpenAI API messages to LangChain format for internal processing
+- Maps: `system` → SystemMessage, `user` → HumanMessage, `assistant` → AIMessage
+- Validates: Ensures no empty content, logs warnings for skipped messages
+- Input: List of ChatMessage from POST /v1/chat/completions request
+- Output: List of BaseMessage for use in chain steps
+
+**`convert_langchain_chunk_to_openai(chunk)`**:
+- Converts internal LangChain output back to OpenAI-compatible format for streaming response
+- Handles multiple input types: dict (state updates), BaseMessage, or plain string
+- Creates proper ChatCompletionChunk with: id, created timestamp, delta content, finish_reason
+- Extracts content from: final_response field, accumulated messages, or any string value
+- Output: ChatCompletionChunk formatted for OpenAI API compatibility
+
+**Benefits of Separation**:
+- OpenAI API contract stays stable and familiar to users
+- Internal workflow can use LangChain abstractions optimally
+- Easy to swap out or upgrade underlying LLM integration
+- Message format compatibility with OpenAI clients and tools
 
 ## Extensibility Points
 
