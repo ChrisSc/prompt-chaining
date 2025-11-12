@@ -21,21 +21,19 @@ from pydantic import ValidationError
 
 from workflow.chains.steps import analyze_step, load_system_prompt, process_step, synthesize_step
 from workflow.models.chains import (
-    AnalysisOutput,
     ChainConfig,
     ChainState,
     ChainStepConfig,
-    ProcessOutput,
-    SynthesisOutput,
 )
-
 
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
 
 
-def create_mock_ai_message(content: str, input_tokens: int = 50, output_tokens: int = 100) -> AIMessage:
+def create_mock_ai_message(
+    content: str, input_tokens: int = 50, output_tokens: int = 100
+) -> AIMessage:
     """Create a mock AIMessage with proper usage_metadata."""
     return AIMessage(
         content=content,
@@ -189,12 +187,14 @@ class TestAnalyzeStep:
     @pytest.mark.asyncio
     async def test_analyze_step_happy_path(self, sample_chain_state, sample_chain_config):
         """Test analyze_step with valid input and LLM response."""
-        valid_json = json.dumps({
-            "intent": "test intent",
-            "key_entities": ["entity1", "entity2"],
-            "complexity": "simple",
-            "context": {},
-        })
+        valid_json = json.dumps(
+            {
+                "intent": "test intent",
+                "key_entities": ["entity1", "entity2"],
+                "complexity": "simple",
+                "context": {},
+            }
+        )
 
         with patch("workflow.chains.steps.ChatAnthropic") as mock_chat:
             mock_llm = AsyncMock()
@@ -213,17 +213,21 @@ class TestAnalyzeStep:
     @pytest.mark.asyncio
     async def test_analyze_step_json_in_markdown(self, sample_chain_state, sample_chain_config):
         """Test analyze_step handles JSON wrapped in markdown code blocks."""
-        valid_json = json.dumps({
-            "intent": "markdown test",
-            "key_entities": ["entity"],
-            "complexity": "moderate",
-            "context": {"test": "value"},
-        })
+        valid_json = json.dumps(
+            {
+                "intent": "markdown test",
+                "key_entities": ["entity"],
+                "complexity": "moderate",
+                "context": {"test": "value"},
+            }
+        )
         markdown_response = f"```json\n{valid_json}\n```"
 
         with patch("workflow.chains.steps.ChatAnthropic") as mock_chat:
             mock_llm = AsyncMock()
-            mock_llm.ainvoke = AsyncMock(return_value=create_mock_ai_message(markdown_response, 50, 100))
+            mock_llm.ainvoke = AsyncMock(
+                return_value=create_mock_ai_message(markdown_response, 50, 100)
+            )
             mock_chat.return_value = mock_llm
 
             result = await analyze_step(sample_chain_state, sample_chain_config)
@@ -250,20 +254,26 @@ class TestAnalyzeStep:
         """Test analyze_step raises error when LLM response is invalid JSON."""
         with patch("workflow.chains.steps.ChatAnthropic") as mock_chat:
             mock_llm = AsyncMock()
-            mock_llm.ainvoke = AsyncMock(return_value=create_mock_ai_message("not valid json at all", 50, 100))
+            mock_llm.ainvoke = AsyncMock(
+                return_value=create_mock_ai_message("not valid json at all", 50, 100)
+            )
             mock_chat.return_value = mock_llm
 
             with pytest.raises((json.JSONDecodeError, ValueError)):
                 await analyze_step(sample_chain_state, sample_chain_config)
 
     @pytest.mark.asyncio
-    async def test_analyze_step_missing_required_field(self, sample_chain_state, sample_chain_config):
+    async def test_analyze_step_missing_required_field(
+        self, sample_chain_state, sample_chain_config
+    ):
         """Test analyze_step raises ValidationError when required field is missing."""
-        invalid_json = json.dumps({
-            "key_entities": ["entity"],
-            "complexity": "simple",
-            # Missing 'intent' field
-        })
+        invalid_json = json.dumps(
+            {
+                "key_entities": ["entity"],
+                "complexity": "simple",
+                # Missing 'intent' field
+            }
+        )
 
         with patch("workflow.chains.steps.ChatAnthropic") as mock_chat:
             mock_llm = AsyncMock()
@@ -276,12 +286,14 @@ class TestAnalyzeStep:
     @pytest.mark.asyncio
     async def test_analyze_step_token_tracking(self, sample_chain_state, sample_chain_config):
         """Test analyze_step correctly tracks tokens and cost."""
-        valid_json = json.dumps({
-            "intent": "test",
-            "key_entities": ["entity"],
-            "complexity": "simple",
-            "context": {},
-        })
+        valid_json = json.dumps(
+            {
+                "intent": "test",
+                "key_entities": ["entity"],
+                "complexity": "simple",
+                "context": {},
+            }
+        )
 
         with patch("workflow.chains.steps.ChatAnthropic") as mock_chat:
             mock_llm = AsyncMock()
@@ -300,12 +312,14 @@ class TestAnalyzeStep:
     @pytest.mark.asyncio
     async def test_analyze_step_message_accumulation(self, sample_chain_state, sample_chain_config):
         """Test analyze_step appends response to messages using add_messages."""
-        valid_json = json.dumps({
-            "intent": "test",
-            "key_entities": ["entity"],
-            "complexity": "simple",
-            "context": {},
-        })
+        valid_json = json.dumps(
+            {
+                "intent": "test",
+                "key_entities": ["entity"],
+                "complexity": "simple",
+                "context": {},
+            }
+        )
 
         with patch("workflow.chains.steps.ChatAnthropic") as mock_chat:
             mock_llm = AsyncMock()
@@ -320,14 +334,18 @@ class TestAnalyzeStep:
             assert isinstance(result["messages"][0], AIMessage)
 
     @pytest.mark.asyncio
-    async def test_analyze_step_missing_usage_metadata(self, sample_chain_state, sample_chain_config):
+    async def test_analyze_step_missing_usage_metadata(
+        self, sample_chain_state, sample_chain_config
+    ):
         """Test analyze_step handles response without usage_metadata gracefully."""
-        valid_json = json.dumps({
-            "intent": "test",
-            "key_entities": ["entity"],
-            "complexity": "simple",
-            "context": {},
-        })
+        valid_json = json.dumps(
+            {
+                "intent": "test",
+                "key_entities": ["entity"],
+                "complexity": "simple",
+                "context": {},
+            }
+        )
 
         with patch("workflow.chains.steps.ChatAnthropic") as mock_chat:
             mock_llm = AsyncMock()
@@ -353,15 +371,19 @@ class TestProcessStep:
     """Test suite for process_step function."""
 
     @pytest.mark.asyncio
-    async def test_process_step_happy_path(self, sample_chain_state, sample_chain_config, sample_analysis_output):
+    async def test_process_step_happy_path(
+        self, sample_chain_state, sample_chain_config, sample_analysis_output
+    ):
         """Test process_step with valid analysis and process output."""
         sample_chain_state["analysis"] = sample_analysis_output
 
-        valid_json = json.dumps({
-            "content": "Generated content here",
-            "confidence": 0.8,
-            "metadata": {"key": "value"},
-        })
+        valid_json = json.dumps(
+            {
+                "content": "Generated content here",
+                "confidence": 0.8,
+                "metadata": {"key": "value"},
+            }
+        )
 
         with patch("workflow.chains.steps.ChatAnthropic") as mock_chat:
             mock_llm = AsyncMock()
@@ -383,15 +405,19 @@ class TestProcessStep:
             await process_step(sample_chain_state, sample_chain_config)
 
     @pytest.mark.asyncio
-    async def test_process_step_confidence_score(self, sample_chain_state, sample_chain_config, sample_analysis_output):
+    async def test_process_step_confidence_score(
+        self, sample_chain_state, sample_chain_config, sample_analysis_output
+    ):
         """Test process_step extracts and logs confidence score."""
         sample_chain_state["analysis"] = sample_analysis_output
 
-        valid_json = json.dumps({
-            "content": "Content",
-            "confidence": 0.65,
-            "metadata": {},
-        })
+        valid_json = json.dumps(
+            {
+                "content": "Content",
+                "confidence": 0.65,
+                "metadata": {},
+            }
+        )
 
         with patch("workflow.chains.steps.ChatAnthropic") as mock_chat:
             mock_llm = AsyncMock()
@@ -404,15 +430,19 @@ class TestProcessStep:
             assert metadata["confidence"] == 0.65
 
     @pytest.mark.asyncio
-    async def test_process_step_token_tracking(self, sample_chain_state, sample_chain_config, sample_analysis_output):
+    async def test_process_step_token_tracking(
+        self, sample_chain_state, sample_chain_config, sample_analysis_output
+    ):
         """Test process_step correctly tracks tokens and cost."""
         sample_chain_state["analysis"] = sample_analysis_output
 
-        valid_json = json.dumps({
-            "content": "Content",
-            "confidence": 0.8,
-            "metadata": {},
-        })
+        valid_json = json.dumps(
+            {
+                "content": "Content",
+                "confidence": 0.8,
+                "metadata": {},
+            }
+        )
 
         with patch("workflow.chains.steps.ChatAnthropic") as mock_chat:
             mock_llm = AsyncMock()
@@ -467,7 +497,9 @@ class TestSynthesizeStep:
             assert "Final polished response" in final_result["final_response"]
 
     @pytest.mark.asyncio
-    async def test_synthesize_step_missing_processed_content(self, sample_chain_state, sample_chain_config):
+    async def test_synthesize_step_missing_processed_content(
+        self, sample_chain_state, sample_chain_config
+    ):
         """Test synthesize_step raises ValueError when processed_content is missing."""
         with pytest.raises(ValueError, match="Processed content not found in state"):
             async for _ in synthesize_step(sample_chain_state, sample_chain_config):
@@ -485,7 +517,7 @@ class TestSynthesizeStep:
                 '{"fi',
                 'nal_text": "Response',
                 " part one. Response",
-                ' part two. Response part three.',
+                " part two. Response part three.",
                 '", "formatting": "markdown"}',
             ]
             for i, chunk_text in enumerate(chunks):
@@ -510,8 +542,12 @@ class TestSynthesizeStep:
             for i, result in enumerate(result_list):
                 assert "final_response" in result
                 # Each accumulation should be at least as long as the one before it (with some buffer for final parsing)
-                if i > 0 and i < len(result_list) - 1:  # Skip last one since it might be parsed differently
-                    assert len(result["final_response"]) >= len(result_list[i - 1]["final_response"])
+                if (
+                    i > 0 and i < len(result_list) - 1
+                ):  # Skip last one since it might be parsed differently
+                    assert len(result["final_response"]) >= len(
+                        result_list[i - 1]["final_response"]
+                    )
 
     @pytest.mark.asyncio
     async def test_synthesize_step_graceful_fallback_invalid_json(
@@ -535,7 +571,9 @@ class TestSynthesizeStep:
 
             final_result = result_list[-1]
             # Should use accumulated text as fallback
-            assert "This is not valid JSON at all but it has content" in final_result["final_response"]
+            assert (
+                "This is not valid JSON at all but it has content" in final_result["final_response"]
+            )
 
     @pytest.mark.asyncio
     async def test_synthesize_step_dict_processed_content(
@@ -578,16 +616,20 @@ class TestChainStepsIntegration:
     async def test_cost_aggregation(self, sample_chain_state, sample_chain_config):
         """Test that costs are correctly calculated across steps."""
         # Analyze with specific token counts
-        analysis_json = json.dumps({
-            "intent": "Test",
-            "key_entities": ["test"],
-            "complexity": "simple",
-            "context": {},
-        })
+        analysis_json = json.dumps(
+            {
+                "intent": "Test",
+                "key_entities": ["test"],
+                "complexity": "simple",
+                "context": {},
+            }
+        )
 
         with patch("workflow.chains.steps.ChatAnthropic") as mock_chat:
             mock_llm = AsyncMock()
-            mock_llm.ainvoke = AsyncMock(return_value=create_mock_ai_message(analysis_json, 100, 200))
+            mock_llm.ainvoke = AsyncMock(
+                return_value=create_mock_ai_message(analysis_json, 100, 200)
+            )
             mock_chat.return_value = mock_llm
 
             analyze_result = await analyze_step(sample_chain_state, sample_chain_config)
@@ -597,15 +639,19 @@ class TestChainStepsIntegration:
 
         # Process with different token counts
         sample_chain_state["analysis"] = analyze_result["analysis"]
-        process_json = json.dumps({
-            "content": "Content",
-            "confidence": 0.8,
-            "metadata": {},
-        })
+        process_json = json.dumps(
+            {
+                "content": "Content",
+                "confidence": 0.8,
+                "metadata": {},
+            }
+        )
 
         with patch("workflow.chains.steps.ChatAnthropic") as mock_chat:
             mock_llm = AsyncMock()
-            mock_llm.ainvoke = AsyncMock(return_value=create_mock_ai_message(process_json, 200, 400))
+            mock_llm.ainvoke = AsyncMock(
+                return_value=create_mock_ai_message(process_json, 200, 400)
+            )
             mock_chat.return_value = mock_llm
 
             process_result = await process_step(sample_chain_state, sample_chain_config)

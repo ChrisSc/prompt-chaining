@@ -14,11 +14,11 @@ System prompts are loaded from the prompts/ directory and control the behavior
 of each step. Token usage and costs are tracked throughout execution.
 """
 
-import asyncio
 import json
 import time
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
@@ -60,9 +60,9 @@ def load_system_prompt(filename: str) -> str:
         raise FileNotFoundError(f"System prompt not found: {prompt_path}")
 
     try:
-        with open(prompt_path, "r", encoding="utf-8") as f:
+        with open(prompt_path, encoding="utf-8") as f:
             return f.read()
-    except IOError as e:
+    except OSError as e:
         logger.error(
             f"Failed to load system prompt: {filename}",
             extra={"filename": filename, "error": str(e)},
@@ -109,7 +109,9 @@ async def analyze_step(state: ChainState, config: ChainConfig) -> dict[str, Any]
     # Get the latest user message (most recent message in the list)
     user_message = None
     for message in reversed(state["messages"]):
-        if isinstance(message, HumanMessage) or (isinstance(message, dict) and message.get("role") == "user"):
+        if isinstance(message, HumanMessage) or (
+            isinstance(message, dict) and message.get("role") == "user"
+        ):
             if isinstance(message, dict):
                 user_message = message.get("content", "")
             else:
@@ -357,9 +359,7 @@ async def process_step(state: ChainState, config: ChainConfig) -> dict[str, Any]
         raise
 
 
-async def synthesize_step(
-    state: ChainState, config: ChainConfig
-) -> AsyncIterator[dict[str, Any]]:
+async def synthesize_step(state: ChainState, config: ChainConfig) -> AsyncIterator[dict[str, Any]]:
     """
     Synthesis step: Polish and format the final response (streaming).
 
