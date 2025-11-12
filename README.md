@@ -195,20 +195,89 @@ python console_client.py "Your prompt here"
 
 See [JWT_AUTHENTICATION.md](./JWT_AUTHENTICATION.md) for complete authentication documentation.
 
-## Prompt-Chaining Workflow
+## Understanding the Prompt-Chaining Workflow
 
-The system implements a three-step prompt-chaining pattern that processes requests sequentially through specialized agents:
+The system implements a three-step prompt-chaining pattern that processes requests sequentially through specialized agents. Each step is independently configured with its own Claude model, token limits, and system prompt.
 
-**1. Analyze** (`chain_analyze.md`)
-Parses user requests to extract intent, key entities, complexity assessment, and contextual information. Output is structured JSON that feeds into the processing step.
+### The Three-Phase Flow
 
-**2. Process** (`chain_process.md`)
-Generates substantive content addressing the identified intent from the analysis step. Includes confidence scoring and metadata capture for traceability.
+**Phase 1: Analysis** (`analyze_step()`)
+Parses user requests to extract structured information for downstream processing.
+- Extracts user intent (what they want to accomplish)
+- Identifies key entities, topics, and concepts mentioned
+- Assesses task complexity (simple, moderate, or complex)
+- Gathers contextual information for the processing phase
+- Output: `AnalysisOutput` as structured JSON (intent, key_entities, complexity, context)
 
-**3. Synthesize** (`chain_synthesize.md`)
-Polishes and formats the response with appropriate styling and optimization for user consumption. Produces the final user-ready output.
+**Phase 2: Processing** (`process_step()`)
+Generates substantive content addressing the identified intent from the analysis phase.
+- Receives analysis output as context
+- Generates domain-specific content based on analysis
+- Scores confidence in the generated content (0.0-1.0)
+- Captures metadata for traceability and debugging
+- Output: `ProcessOutput` as structured JSON (content, confidence, metadata)
 
-Each step uses a specialized system prompt and outputs structured JSON that flows to the next step. For detailed information about system prompts and architecture, see [ARCHITECTURE.md](./ARCHITECTURE.md).
+**Phase 3: Synthesis** (`synthesize_step()`)
+Polishes and formats the response with appropriate styling for user consumption (streaming).
+- Receives processed content as context
+- Applies formatting, styling, and polish
+- Streams response token-by-token in real-time to client
+- Ensures professional, user-ready output
+- Output: `SynthesisOutput` as structured JSON (final_text, formatting)
+
+### Data Flow Diagram
+
+```
+User Request
+    ↓
+analyze_step() → Intent, Entities, Complexity
+    ↓
+Validation Gate: Intent required?
+    ↓
+process_step() → Generated Content with Confidence
+    ↓
+Validation Gate: Confidence >= 0.5?
+    ↓
+synthesize_step() → Polished Response (STREAMED)
+    ↓
+Client receives response incrementally
+```
+
+### Why This Pattern?
+
+- **Structured Reasoning**: Breaking down complex tasks into focused steps enables better reasoning at each stage
+- **Quality Control**: Validation gates between steps prevent bad data from cascading through the workflow
+- **Flexibility**: Each step can use different models, token limits, and configurations for optimal cost/quality
+- **Observability**: Independent step execution provides visibility into reasoning process
+- **User Experience**: Streaming synthesis provides real-time responsiveness while maintaining quality
+- **Cost Optimization**: Fast Haiku models for most steps, with ability to upgrade to Sonnet if needed
+
+### Token Usage & Cost Tracking
+
+Token usage is automatically tracked and logged throughout execution:
+
+```bash
+# Each step logs token usage and cost metrics
+# View in logs: grep "elapsed_seconds" logs.json
+# Cost is logged per step and aggregated for total request
+
+# Example log output:
+# "Analysis step completed - 250 input_tokens, 180 output_tokens, $0.0012 cost"
+# "Processing step completed - 450 input_tokens, 520 output_tokens, $0.0042 cost"
+# "Synthesis step completed - 620 input_tokens, 410 output_tokens, $0.0035 cost"
+# Total: 1,320 input_tokens, 1,110 output_tokens, $0.0089 cost
+```
+
+All step metrics are aggregated and available in structured JSON logs for cost monitoring and optimization.
+
+### System Prompts
+
+Each step loads its behavior from a specialized system prompt:
+- `src/workflow/prompts/chain_analyze.md` - Analysis instructions
+- `src/workflow/prompts/chain_process.md` - Processing instructions
+- `src/workflow/prompts/chain_synthesize.md` - Synthesis instructions
+
+For detailed information about system prompts, configuration, and architecture, see [ARCHITECTURE.md](./ARCHITECTURE.md#prompt-chaining-step-functions).
 
 ## Architecture
 

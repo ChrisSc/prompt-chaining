@@ -940,21 +940,261 @@ See CLAUDE.md "Circuit Breaker & Retry Logic" section for configuration details.
 - Rate limiting per API key/client
 - Request timeout tuning based on actual usage patterns
 
+## Prompt-Chaining Step Functions
+
+The prompt-chaining workflow is implemented through three step functions orchestrated by LangGraph StateGraph. Each step processes `ChainState`, performs LLM operations, and returns state updates.
+
+### Overview
+
+The step functions implement the three sequential LLM calls that compose the prompt-chaining pattern:
+
+- **File Location**: `src/workflow/chains/steps.py`
+- **Integration**: Called by LangGraph StateGraph via conditional edges (validation gates)
+- **State Management**: All steps read from and write to `ChainState` TypedDict
+- **Token Tracking**: Each step extracts usage metadata and logs costs
+
+### Step 1: Analyze Step (analyze_step)
+
+**Purpose**: Parse user request and extract structured information for downstream processing.
+
+**Input**:
+- User message from `ChainState.messages` (latest HumanMessage)
+
+**Configuration** (from `ChainConfig.analyze`):
+- Model: Configurable (default: Claude Haiku 4.5)
+- Max tokens: Configurable (default: 1000)
+- Temperature: Configurable (default: 0.7)
+- System prompt file: `src/workflow/prompts/chain_analyze.md`
+
+**Output** (`AnalysisOutput`):
+```json
+{
+  "intent": "User's primary goal",
+  "key_entities": ["entity1", "entity2"],
+  "complexity": "simple|moderate|complex",
+  "context": { "additional": "contextual info" }
+}
+```
+
+**Returns** (ChainState updates):
+- `analysis`: AnalysisOutput as dict
+- `messages`: Appended LLM response
+- `step_metadata.analyze`: Token counts, costs, elapsed time
+
+**Key Behavior**:
+- Non-streaming: Uses `ainvoke()` for single LLM call
+- JSON parsing: Validates response against AnalysisOutput Pydantic model
+- Markdown handling: Automatically cleans markdown code blocks (```json...```)
+- Error handling: Logs parsing errors at ERROR level; raises ValidationError
+
+**Token Tracking**:
+- Extracts `usage_metadata` from LLM response
+- Calculates USD cost using `calculate_cost()` utility
+- Logs input/output tokens and cost in structured format
+
+### Step 2: Process Step (process_step)
+
+**Purpose**: Generate content based on analysis results with confidence scoring.
+
+**Input**:
+- Analysis from `ChainState.analysis`
+- Builds context prompt including: intent, key entities, complexity level, additional context
+
+**Configuration** (from `ChainConfig.process`):
+- Model: Configurable (default: Claude Haiku 4.5)
+- Max tokens: Configurable (default: 2000)
+- Temperature: Configurable (default: 0.7)
+- System prompt file: `src/workflow/prompts/chain_process.md`
+
+**Output** (`ProcessOutput`):
+```json
+{
+  "content": "Generated content addressing the intent",
+  "confidence": 0.85,
+  "metadata": { "generation_approach": "value" }
+}
+```
+
+**Returns** (ChainState updates):
+- `processed_content`: ProcessOutput as dict
+- `messages`: Appended LLM response
+- `step_metadata.process`: Token counts, costs, confidence, elapsed time
+
+**Key Behavior**:
+- Non-streaming: Uses `ainvoke()` for single LLM call
+- Context-aware: Incorporates analysis results into processing prompt
+- Confidence scoring: Confidence score must pass validation gate (>= 0.5)
+- JSON parsing: Validates response against ProcessOutput Pydantic model
+- Error handling: Logs parsing errors at ERROR level; raises ValidationError
+
+**Token Tracking**:
+- Extracts `usage_metadata` from LLM response
+- Calculates USD cost using `calculate_cost()` utility
+- Logs confidence score and content length alongside token metrics
+
+### Step 3: Synthesize Step (synthesize_step)
+
+**Purpose**: Polish and format final response for user delivery.
+
+**Input**:
+- Processed content from `ChainState.processed_content`
+- Builds context prompt including: content, confidence level, generation metadata
+
+**Configuration** (from `ChainConfig.synthesize`):
+- Model: Configurable (default: Claude Haiku 4.5)
+- Max tokens: Configurable (default: 2000)
+- Temperature: Configurable (default: 0.7)
+- System prompt file: `src/workflow/prompts/chain_synthesize.md`
+
+**Output** (`SynthesisOutput`):
+```json
+{
+  "final_text": "Polished and formatted response",
+  "formatting": "markdown|plain|html"
+}
+```
+
+**Yields** (AsyncIterator of ChainState updates):
+- Incremental state updates for each streamed chunk
+- `final_response`: Accumulated text from streaming chunks
+- `messages`: Appended response chunks
+- `step_metadata.synthesize`: Progressive and final token counts, costs, formatting
+
+**Key Behavior**:
+- **Streaming**: Only synthesis step uses `astream()` for token-by-token delivery to client
+- Incremental yielding: Yields state updates for each chunk to enable real-time streaming
+- JSON parsing with fallback: Attempts to parse accumulated text as SynthesisOutput; falls back to plain text on failure
+- Markdown handling: Automatically cleans markdown code blocks from accumulated response
+- Error handling: Logs JSON parsing warnings at WARNING level; uses accumulated text as fallback
+
+**Token Tracking**:
+- Extracts `usage_metadata` from final chunk (contains aggregate token counts)
+- Calculates USD cost using `calculate_cost()` utility
+- Logs formatting style and final text length alongside token metrics
+
+### State Flow Through Steps
+
+```
+User Request (ChainState.messages)
+    ↓
+[analyze_step] extracts intent, entities, complexity
+    ↓
+ChainState.analysis populated
+    ↓
+[validation gate: should_proceed_to_process]
+    ↓
+[process_step] generates content with confidence
+    ↓
+ChainState.processed_content populated
+    ↓
+[validation gate: should_proceed_to_synthesize]
+    ↓
+[synthesize_step] polishes and formats (STREAMING)
+    ↓
+ChainState.final_response accumulated
+    ↓
+Client receives streamed response
+```
+
+### System Prompts
+
+Each step loads its system prompt from a markdown file in `src/workflow/prompts/`:
+
+1. **chain_analyze.md**: Instructions for analysis step
+   - Controls intent parsing logic
+   - Defines entity extraction rules
+   - Specifies complexity assessment criteria
+   - Customizable for domain-specific analysis
+
+2. **chain_process.md**: Instructions for processing step
+   - Controls content generation approach
+   - Defines confidence scoring logic
+   - Specifies metadata capture
+   - Customizable for domain-specific generation
+
+3. **chain_synthesize.md**: Instructions for synthesis step
+   - Controls formatting and polishing logic
+   - Defines styling preferences
+   - Specifies final validation rules
+   - Customizable for domain-specific formatting
+
+### Error Handling & Validation
+
+**JSON Parsing**:
+- Analyze and Process steps raise exceptions on parse failures
+- Synthesize step falls back to accumulated text on parse failures
+- Markdown code block wrapper is automatically removed before parsing
+
+**Validation Gates**:
+- After analyze step: `should_proceed_to_process()` routes to process or error handler
+- After process step: `should_proceed_to_synthesize()` routes to synthesize or error handler
+- Business rules enforced:
+  - Analysis: Intent must be present and non-empty
+  - Process: Content must be non-empty, confidence >= 0.5
+
+**Logging**:
+- All steps log token usage and cost metrics at INFO level
+- Parse failures logged at ERROR (analyze, process) or WARNING (synthesize) level
+- Step execution duration and performance metrics included in logs
+
+### Configuration Reference
+
+All step functions are configured via `ChainConfig` (from `src/workflow/models/chains.py`):
+
+```python
+class ChainStepConfig(BaseModel):
+    model: str                      # Claude model ID
+    max_tokens: int                 # Maximum tokens to generate
+    temperature: float              # Sampling temperature (0.0-2.0)
+    system_prompt_file: str         # Prompt filename in src/workflow/prompts/
+
+class ChainConfig(BaseModel):
+    analyze: ChainStepConfig        # Analysis step config
+    process: ChainStepConfig        # Processing step config
+    synthesize: ChainStepConfig     # Synthesis step config
+    analyze_timeout: int = 15       # Step timeout (1-270 seconds)
+    process_timeout: int = 30
+    synthesize_timeout: int = 20
+    enable_validation: bool = True  # Enable validation gates
+    strict_validation: bool = False # Fail fast vs. warn on errors
+```
+
+### Cost & Performance
+
+**Token Usage**:
+- Each step extracts `input_tokens` and `output_tokens` from LLM response
+- Used to calculate USD cost via `calculate_cost(model, input_tokens, output_tokens)`
+- Aggregated across steps for complete workflow cost tracking
+
+**Timing**:
+- Each step measures elapsed time via `time.time()`
+- Logged in structured format: `elapsed_seconds`
+- Enables performance optimization and SLA monitoring
+
+**Typical Performance** (on Haiku models):
+- Analysis step: 1-2 seconds
+- Processing step: 2-4 seconds
+- Synthesis step: 1-2 seconds (plus streaming overhead)
+- Total request: 4-8 seconds + network latency
+
 ## Extensibility Points
 
 The template is designed for easy customization of the prompt-chaining workflow:
 
-1. **System Prompts**: Text files in `src/workflow/prompts/` directory
-   - `analysis_system.md`: Analysis step instructions
-   - `processing_system.md`: Processing step instructions
-   - `synthesis_system.md`: Synthesis step instructions
+1. **Step Function Prompts**: Text files in `src/workflow/prompts/` directory
+   - `chain_analyze.md`: Customize intent parsing and entity extraction
+   - `chain_process.md`: Customize content generation logic
+   - `chain_synthesize.md`: Customize formatting and polishing
+   - Each prompt MUST output valid JSON matching its Pydantic model
 2. **Chain Models**: Workflow models in `src/workflow/models/chains.py`
    - Extend `AnalysisOutput`, `ProcessOutput`, `SynthesisOutput` for domain data
    - Customize `ChainConfig` with additional parameters
-3. **Internal Models**: Domain-specific models in `src/workflow/models/internal.py`
+3. **Step Function Logic**: Customize step functions in `src/workflow/chains/steps.py`
+   - Modify `analyze_step()` for custom intent extraction or complexity assessment
+   - Modify `process_step()` for custom confidence scoring or content validation
+   - Modify `synthesize_step()` for custom formatting or post-processing
+4. **Internal Models**: Domain-specific models in `src/workflow/models/internal.py`
    - Add domain-specific validation and business logic
-4. **Workflow Agents**: Step execution logic in `src/workflow/agents/`
-   - Customize analysis, processing, and synthesis agent behavior
 5. **Configuration**: Environment-based settings in `src/workflow/config.py`
    - Add domain-specific configuration parameters
 6. **API Endpoints**: Additional routes in `src/workflow/api/` directory
