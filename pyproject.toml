@@ -3,9 +3,9 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "orchestrator-worker"
+name = "prompt_chaining"
 version = "0.3.4"
-description = "Multi-agent orchestration platform with OpenAI-compatible API"
+description = "Prompt Chaining orchestration platform with OpenAI-compatible API"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [

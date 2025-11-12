@@ -12,7 +12,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from slowapi.errors import RateLimitExceeded
 
-from workflow.agents.orchestrator import Orchestrator
 from workflow.api.health import router as health_router
 from workflow.api.limiter import limiter
 from workflow.api.v1.chat import router as chat_router
@@ -48,38 +47,21 @@ async def lifespan(app: FastAPI):  # type: ignore
     # Startup
     logger.info("Application starting up")
     try:
-        # Initialize orchestrator for backward compatibility
-        orchestrator = app.state.orchestrator
-        await orchestrator.initialize()
-        logger.info("Orchestrator agent initialized")
-
         # Initialize chain graph for prompt-chaining workflow
-        try:
-            settings = app.state.settings
-            chain_graph = build_chain_graph(settings.chain_config)
-            app.state.chain_graph = chain_graph
-            logger.info(
-                "LangGraph chain graph initialized and compiled",
-                extra={
-                    "analyze_model": settings.chain_analyze_model,
-                    "process_model": settings.chain_process_model,
-                    "synthesize_model": settings.chain_synthesize_model,
-                },
-            )
-        except Exception as exc:
-            logger.error(
-                "Failed to initialize chain graph",
-                extra={
-                    "error": str(exc),
-                    "error_type": type(exc).__name__,
-                },
-            )
-            # Log error but don't fail startup - allows fallback to orchestrator
-            app.state.chain_graph = None
-
+        settings = app.state.settings
+        chain_graph = build_chain_graph(settings.chain_config)
+        app.state.chain_graph = chain_graph
+        logger.info(
+            "LangGraph chain graph initialized and compiled",
+            extra={
+                "analyze_model": settings.chain_analyze_model,
+                "process_model": settings.chain_process_model,
+                "synthesize_model": settings.chain_synthesize_model,
+            },
+        )
     except Exception as exc:
         logger.critical(
-            "Failed to initialize orchestrator - application cannot start",
+            "Failed to initialize chain graph - application cannot start",
             extra={
                 "error": str(exc),
                 "error_type": type(exc).__name__,
@@ -91,12 +73,6 @@ async def lifespan(app: FastAPI):  # type: ignore
 
     # Shutdown
     logger.info("Application shutting down")
-    try:
-        orchestrator = app.state.orchestrator
-        await orchestrator.shutdown()
-        logger.info("Orchestrator agent shut down")
-    except Exception as exc:
-        logger.error(f"Error during orchestrator shutdown: {str(exc)}")
 
 
 def create_app() -> FastAPI:
@@ -131,15 +107,12 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.api_title,
         version=settings.api_version,
-        description="Multi-agent orchestration platform with OpenAI-compatible API",
+        description="Prompt Chaining orchestration platform with OpenAI-compatible API",
         lifespan=lifespan,
     )
 
     # Store settings in app state
     app.state.settings = settings
-
-    # Initialize agents
-    app.state.orchestrator = Orchestrator(settings)
 
     # Attach rate limiter to app state
     app.state.limiter = limiter

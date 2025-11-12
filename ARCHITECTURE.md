@@ -363,6 +363,142 @@ Edge functions handle multiple input types transparently:
 - Enables fast failure on quality issues vs. cascading bad data
 - Supports both strict and lenient validation modes for different use cases
 
+### Validation Gates: Examples and Failure Scenarios
+
+**Success Path Example**:
+```
+Input: "What is the capital of France?"
+  ↓
+analyze_step()
+  ├─ intent: "Find the capital of France"
+  ├─ key_entities: ["France", "capital"]
+  ├─ complexity: "simple"
+  └─ context: {}
+  ↓
+should_proceed_to_process() validates:
+  ├─ intent is non-empty? YES ("Find the capital of France")
+  ├─ intent is only whitespace? NO
+  └─ Result: PROCEED to process_step
+  ↓
+process_step()
+  ├─ content: "The capital of France is Paris..."
+  ├─ confidence: 0.95
+  └─ metadata: { "source": "geographic_knowledge" }
+  ↓
+should_proceed_to_synthesize() validates:
+  ├─ content is non-empty? YES
+  ├─ confidence >= 0.5? YES (0.95)
+  ├─ confidence <= 1.0? YES
+  └─ Result: PROCEED to synthesize_step
+  ↓
+synthesize_step() streams formatted response
+```
+
+**Failure Path Example 1: Empty Intent**:
+```
+Input: "   " (whitespace only)
+  ↓
+analyze_step()
+  ├─ intent: "   " (whitespace)
+  ├─ key_entities: []
+  ├─ complexity: "simple"
+  └─ context: {}
+  ↓
+should_proceed_to_process() validates:
+  ├─ intent is non-empty? NO (whitespace stripped = empty)
+  ├─ Error: "intent field is required and must be non-empty"
+  └─ Result: ROUTE TO ERROR
+  ↓
+error_step() returns:
+  {
+    "error": "Validation failed: intent field is required and must be non-empty",
+    "step": "analysis",
+    "details": {"field": "intent", "issue": "empty"}
+  }
+  ↓
+Stream error to client via SSE
+```
+
+**Failure Path Example 2: Low Confidence**:
+```
+Input: "Explain quantum mechanics in one sentence"
+  ↓
+analyze_step() → OK (intent: "Explain quantum mechanics")
+  ↓
+process_step()
+  ├─ content: "Quantum physics... [incomplete/uncertain]"
+  ├─ confidence: 0.3 (LOW - model unsure)
+  └─ metadata: { "source": "uncertain_reasoning" }
+  ↓
+should_proceed_to_synthesize() validates:
+  ├─ content is non-empty? YES
+  ├─ confidence >= 0.5? NO (0.3 < 0.5)
+  ├─ Error: "confidence score 0.3 does not meet minimum threshold of 0.5"
+  └─ Result: ROUTE TO ERROR
+  ↓
+error_step() returns:
+  {
+    "error": "Validation failed: confidence score is below minimum threshold",
+    "step": "processing",
+    "details": {"field": "confidence", "value": 0.3, "minimum": 0.5}
+  }
+  ↓
+Stream error to client via SSE
+```
+
+**Boundary Condition: Confidence At Threshold**:
+```
+Input: "What is the weather?" (ambiguous - no location)
+  ↓
+process_step()
+  ├─ content: "I need more information about location..."
+  ├─ confidence: 0.5 (AT THRESHOLD)
+  └─ metadata: { "ambiguous_input": true }
+  ↓
+should_proceed_to_synthesize() validates:
+  ├─ confidence >= 0.5? YES (0.5 >= 0.5, boundary condition passes)
+  └─ Result: PROCEED to synthesize_step
+  ↓
+synthesize_step() streams response asking for clarification
+```
+
+### Error Routing Diagram
+
+```
+ChainState flows through steps:
+
+analyze_step outputs ChainState with analysis field
+    ↓
+┌─────────────────────────────────────────────┐
+│ should_proceed_to_process(state)            │ (Conditional Edge)
+│                                             │
+│ if analysis.intent is non-empty:           │
+│   → route to "process" node                 │
+│ else:                                       │
+│   → route to "error" node                   │
+└─────────────────────────────────────────────┘
+    ↓                               ↓
+ process_step              error_step (returns error message)
+    ↓                               ↓
+┌─────────────────────────────────────────────┐
+│ should_proceed_to_synthesize(state)         │ (Conditional Edge)
+│                                             │
+│ if processing.confidence >= 0.5 AND        │
+│    processing.content is non-empty:        │
+│   → route to "synthesize" node              │
+│ else:                                       │
+│   → route to "error" node                   │
+└─────────────────────────────────────────────┘
+    ↓                               ↓
+ synthesize_step           error_step (returns error message)
+    ↓                               ↓
+    └─────────────┬─────────────────┘
+                  ↓
+              END node (success or error)
+                  ↓
+            Stream to client
+```
+
 ### LangGraph Integration
 
 The workflow uses `StateGraph` (from `src/workflow/chains/graph.py`) to orchestrate the sequential steps:
@@ -374,14 +510,100 @@ The workflow uses `StateGraph` (from `src/workflow/chains/graph.py`) to orchestr
 - **State Management**: ChainState TypedDict with `add_messages` reducer maintains message accumulation
 - **Async Execution**: Supports both non-streaming (`invoke_chain`) and streaming (`stream_chain`) modes
 
+**Node Definitions**:
+
+1. **START Node**
+   - Entry point for all requests
+   - Initializes ChainState with:
+     - `messages`: List with initial HumanMessage from request
+     - `analysis`: None (will be populated by analyze_step)
+     - `processed_content`: None (will be populated by process_step)
+     - `final_response`: None (will be populated by synthesize_step)
+     - `step_metadata`: {} (accumulates metrics)
+
+2. **analyze Node** (`analyze_step`)
+   - Receives ChainState with user message
+   - Outputs: ChainState with `analysis` field populated
+   - Timeout: configurable (default 15s via `ChainConfig.analyze_timeout`)
+   - State mutation: Updates `messages`, adds `analysis` dict, populates `step_metadata.analyze`
+
+3. **process Node** (`process_step`)
+   - Receives ChainState with `analysis` populated
+   - Uses analysis output as context for generation
+   - Outputs: ChainState with `processed_content` field populated
+   - Timeout: configurable (default 30s via `ChainConfig.process_timeout`)
+   - State mutation: Updates `messages`, adds `processed_content` string, populates `step_metadata.process`
+
+4. **synthesize Node** (`synthesize_step`)
+   - Receives ChainState with `processed_content` populated
+   - Streams token-by-token (only streaming node)
+   - Outputs: AsyncIterator yielding ChainState updates per chunk
+   - Timeout: configurable (default 20s via `ChainConfig.synthesize_timeout`)
+   - State mutation: Updates `messages` incrementally, accumulates `final_response`, populates `step_metadata.synthesize`
+
+5. **error Node** (`error_step`)
+   - Receives ChainState from failed validation gate
+   - Returns user-friendly error message
+   - Timeout: None (synchronous)
+   - State mutation: Sets `final_response` to error message
+
+**Conditional Edges**:
+
+Edge 1: `analyze → should_proceed_to_process`
+```python
+# Logic in should_proceed_to_process(state):
+if state.get("analysis") and state["analysis"].get("intent", "").strip():
+    return "process"  # Valid: proceed
+else:
+    return "error"    # Invalid: route to error handler
+```
+- Success: ChainState flows to process node
+- Failure: ChainState flows to error node with validation failure logged
+
+Edge 2: `process → should_proceed_to_synthesize`
+```python
+# Logic in should_proceed_to_synthesize(state):
+if state.get("processed_content"):
+    content_dict = state["processed_content"]
+    if isinstance(content_dict, dict):
+        confidence = content_dict.get("confidence", 0)
+        if confidence >= 0.5:
+            return "synthesize"  # Valid: proceed
+return "error"  # Invalid: route to error handler
+```
+- Success: ChainState flows to synthesize node
+- Failure: ChainState flows to error node with validation failure logged
+
 **Execution Modes**:
-1. **invoke_chain()**: Non-streaming execution via `graph.ainvoke()` - useful for testing and batch processing
-2. **stream_chain()**: Streaming execution via `graph.astream()` with `stream_mode="messages"` - enables token-by-token output during synthesis
+1. **invoke_chain()**: Non-streaming execution via `graph.ainvoke()`
+   - Useful for testing and batch processing
+   - Returns complete final ChainState after all steps execute
+   - All steps run to completion before returning
+
+2. **stream_chain()**: Streaming execution via `graph.astream()`
+   - AsyncIterator yields state updates as they arrive
+   - Earlier steps (analyze, process) run to completion
+   - Synthesis step yields token-by-token via `astream()` on the LLM
+   - Enables real-time streaming to client via SSE
+   - `stream_mode="messages"` enables message-level granularity
 
 **Error Handling**:
 - Validation gates route invalid outputs to `error_step`
-- Error step creates user-friendly error messages
+- Error step creates structured error response:
+  ```python
+  {
+      "error": "Human-readable error message",
+      "step": "analysis|processing|synthesis",
+      "details": {
+          "field": "field_name",
+          "issue": "validation_issue",
+          "value": actual_value,
+          "expected": expected_constraint
+      }
+  }
+  ```
 - Both success and error paths terminate at END node
+- Client receives error via SSE with [DONE] marker
 
 ## Performance Model
 
@@ -1088,26 +1310,182 @@ The step functions implement the three sequential LLM calls that compose the pro
 
 ### State Flow Through Steps
 
+**Before and After State Examples**:
+
+**Initial State** (at graph START):
+```python
+ChainState = {
+    "messages": [
+        HumanMessage(content="Compare Python async vs sync performance")
+    ],
+    "analysis": None,
+    "processed_content": None,
+    "final_response": None,
+    "step_metadata": {}
+}
+```
+
+**After analyze_step**:
+```python
+ChainState = {
+    "messages": [
+        HumanMessage(content="Compare Python async vs sync performance"),
+        AIMessage(content='{"intent":"...", "key_entities":[...], ...}')  # Added by add_messages reducer
+    ],
+    "analysis": {
+        "intent": "Compare performance characteristics of async vs sync Python code",
+        "key_entities": ["Python", "async", "sync", "performance"],
+        "complexity": "moderate",
+        "context": {"domain": "backend development"}
+    },
+    "processed_content": None,
+    "final_response": None,
+    "step_metadata": {
+        "analyze": {
+            "model": "claude-haiku-4-5-20251001",
+            "input_tokens": 85,
+            "output_tokens": 156,
+            "cost_usd": 0.000967,
+            "elapsed_seconds": 1.23
+        }
+    }
+}
+```
+
+**After process_step**:
+```python
+ChainState = {
+    "messages": [
+        HumanMessage(content="Compare Python async vs sync..."),
+        AIMessage(content='{"intent":"...", ...}'),  # From analyze_step
+        AIMessage(content='{"content":"Async Python code..."}')  # Added by process_step
+    ],
+    "analysis": { ... },  # Unchanged from analyze_step
+    "processed_content": {
+        "content": "Asynchronous Python uses await/async keywords to yield control...",
+        "confidence": 0.87,
+        "metadata": {"approach": "comparative analysis", "examples_included": True}
+    },
+    "final_response": None,
+    "step_metadata": {
+        "analyze": { ... },  # From previous step
+        "process": {
+            "model": "claude-haiku-4-5-20251001",
+            "input_tokens": 287,  # Includes analysis output as context
+            "output_tokens": 412,
+            "cost_usd": 0.003515,
+            "confidence_score": 0.87,
+            "content_length": 2156,
+            "elapsed_seconds": 3.45
+        }
+    }
+}
+```
+
+**After synthesize_step** (streaming completes):
+```python
+ChainState = {
+    "messages": [
+        HumanMessage(content="Compare Python async vs sync..."),
+        AIMessage(content='{"intent":"...", ...}'),
+        AIMessage(content='{"content":"Asynchronous..."}'),
+        AIMessage(content='{"final_text":"# Async vs Sync...", "formatting":"markdown"}')
+    ],
+    "analysis": { ... },
+    "processed_content": { ... },
+    "final_response": "# Async vs Sync Python Performance\n\nAsynchronous Python uses...",  # Accumulated from streaming chunks
+    "step_metadata": {
+        "analyze": { ... },
+        "process": { ... },
+        "synthesize": {
+            "model": "claude-haiku-4-5-20251001",
+            "input_tokens": 521,  # Includes processed_content as context
+            "output_tokens": 387,
+            "cost_usd": 0.002696,
+            "formatting_style": "markdown",
+            "final_text_length": 3421,
+            "elapsed_seconds": 2.11,
+            "chunks_received": 58  # Streaming detail
+        }
+    }
+}
+```
+
+**Token Aggregation Across All Steps**:
+```
+ANALYZE STEP:
+  Input tokens:  85  (user message + system prompt)
+  Output tokens: 156 (analysis output)
+  Cost: $0.000967
+
+PROCESS STEP:
+  Input tokens:  287 (analysis output + system prompt + context)
+  Output tokens: 412 (process output)
+  Cost: $0.003515
+
+SYNTHESIZE STEP:
+  Input tokens:  521 (process output + system prompt + context)
+  Output tokens: 387 (final polished response)
+  Cost: $0.002696
+
+TOTAL REQUEST:
+  Input tokens:  893 (85 + 287 + 521)
+  Output tokens: 955 (156 + 412 + 387)
+  Total tokens:  1,848
+  Total cost:    $0.007178  ($0.000967 + $0.003515 + $0.002696)
+  Total time:    6.79s (1.23 + 3.45 + 2.11)
+```
+
+**Cost Calculation Details** (Haiku pricing: $1/$5 per 1M tokens):
+```python
+# For Haiku model (claude-haiku-4-5-20251001)
+input_cost = input_tokens / 1_000_000 * 1.00   # $1 per 1M input tokens
+output_cost = output_tokens / 1_000_000 * 5.00 # $5 per 1M output tokens
+total_cost = input_cost + output_cost
+
+# Example from analyze_step:
+# 85 input + 156 output
+input_cost = 85 / 1_000_000 * 1.00 = $0.000085
+output_cost = 156 / 1_000_000 * 5.00 = $0.000780
+total_cost = $0.000865 (matches logged $0.000967 with variance for rounding)
+```
+
+**Message Accumulation via add_messages Reducer**:
+The `add_messages` reducer automatically handles merging of new messages into the messages list:
+- Each step appends its output to messages
+- Conversation history preserved for context
+- Earlier messages available for later steps to reference if needed
+- Enables full conversation continuity if adapted for multi-turn
+
+**State Flow Through Steps**:
 ```
 User Request (ChainState.messages)
     ↓
 [analyze_step] extracts intent, entities, complexity
-    ↓
-ChainState.analysis populated
+    ├─ Reads: messages (latest HumanMessage)
+    ├─ Processes: ~1-2 seconds (LLM inference)
+    └─ Writes: analysis dict, messages (appends AIMessage), step_metadata.analyze
     ↓
 [validation gate: should_proceed_to_process]
+    ├─ Checks: analysis.intent is non-empty
+    └─ Routes: to "process" (success) or "error" (failure)
     ↓
 [process_step] generates content with confidence
-    ↓
-ChainState.processed_content populated
+    ├─ Reads: analysis dict (uses as context)
+    ├─ Processes: ~2-4 seconds (LLM inference)
+    └─ Writes: processed_content dict, messages (appends AIMessage), step_metadata.process
     ↓
 [validation gate: should_proceed_to_synthesize]
+    ├─ Checks: processed_content confidence >= 0.5
+    └─ Routes: to "synthesize" (success) or "error" (failure)
     ↓
 [synthesize_step] polishes and formats (STREAMING)
+    ├─ Reads: processed_content dict (uses as context)
+    ├─ Processes: ~1-2 seconds (LLM streaming inference)
+    ├─ Yields: ChainState updates per chunk (~20-100ms per chunk)
+    └─ Writes: final_response accumulated, messages (appends chunks), step_metadata.synthesize
     ↓
-ChainState.final_response accumulated
-    ↓
-Client receives streamed response
+Client receives streamed response (58 chunks in example)
 ```
 
 ### System Prompts

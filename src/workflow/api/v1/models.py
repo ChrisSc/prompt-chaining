@@ -43,11 +43,12 @@ async def list_models(
     )
 
     # Get available models from app state
-    orchestrator = request.app.state.orchestrator
     settings = request.app.state.settings
+    chain_config = settings.chain_config
     models = []
 
-    if orchestrator:
+    if chain_config:
+        # Use the analyze model as the primary model for this service
         models.append(
             {
                 "id": settings.service_model_name,  # Display name from config
@@ -55,7 +56,7 @@ async def list_models(
                 "created": 1762232400,  # Unix timestamp for November 4, 2025
                 "owned_by": "Christopher Scragg",
                 "permission": {},
-                "root": orchestrator.model,  # Underlying Claude model
+                "root": chain_config.analyze.model,  # Underlying Claude model from chain config
                 "parent": {},
             }
         )

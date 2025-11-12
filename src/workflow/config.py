@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     # API Configuration
     api_host: str = Field(default="0.0.0.0", description="API server host address")
     api_port: int = Field(default=8000, description="API server port")
-    api_title: str = Field(default="Agentic Service Platform", description="API title")
+    api_title: str = Field(default="Prompt Chaining Workflow", description="API title")
     api_version: str = Field(default="0.3.4", description="API version")
 
     # Environment
@@ -61,62 +61,8 @@ class Settings(BaseSettings):
 
     # Service Model Display Name
     service_model_name: str = Field(
-        default="orchestrator-worker",
+        default="prompt_chaining",
         description="Display name for service model in API responses",
-    )
-
-    # Orchestrator Configuration
-    orchestrator_model: str = Field(
-        default="claude-sonnet-4-5-20250929",
-        description="Model ID for orchestrator agent (smart coordinator)",
-    )
-    orchestrator_max_tokens: int = Field(
-        default=4096,
-        description="Max tokens for orchestrator responses",
-        ge=1,
-        le=8000,
-    )
-    orchestrator_temperature: float = Field(
-        default=0.7,
-        description="Temperature for orchestrator model",
-        ge=0.0,
-        le=1.0,
-    )
-
-    # Worker Configuration
-    worker_model: str = Field(
-        default="claude-haiku-4-5-20251001",
-        description="Model ID for worker agents (fast executors)",
-    )
-    worker_max_tokens: int = Field(
-        default=4096,
-        description="Max tokens for worker responses",
-        ge=1,
-        le=8000,
-    )
-    worker_temperature: float = Field(
-        default=0.5,
-        description="Temperature for worker model",
-        ge=0.0,
-        le=1.0,
-    )
-
-    # Synthesizer Configuration
-    synthesizer_model: str = Field(
-        default="claude-haiku-4-5-20251001",
-        description="Model ID for synthesizer agent (result aggregator)",
-    )
-    synthesizer_max_tokens: int = Field(
-        default=4096,
-        description="Max tokens for synthesizer responses",
-        ge=1,
-        le=8000,
-    )
-    synthesizer_temperature: float = Field(
-        default=0.5,
-        description="Temperature for synthesizer model",
-        ge=0.0,
-        le=1.0,
     )
 
     # CORS Configuration

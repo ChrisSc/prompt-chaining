@@ -119,13 +119,13 @@ Refer to these documents for implementation details, patterns, and examples.
     - _Requirements: 4.1, 4.2_
     - _Documentation: See `./documentation/fastapi/INDEX_AGENT.md` for streaming response patterns_
 
-- [ ] 7. Create integration tests for chain
-  - [ ] 7.1 Create `tests/integration/test_chain_full.py`
+- [x] 7. Create integration tests for chain
+  - [x] 7.1 Create `tests/integration/test_chain_full.py`
     - Test full chain execution with mocked LLM responses
     - Verify state transitions and message accumulation
     - Test error paths and validation gate failures
     - _Requirements: 4.4, 4.5_
-  - [ ] 7.2 Create live endpoint test for streaming
+  - [x] 7.2 Create live endpoint test for streaming
     - Test `/v1/chat/completions` streaming with actual LLM
     - Verify token usage and cost logging
     - Verify timeout enforcement
