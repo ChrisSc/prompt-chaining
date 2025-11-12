@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the Agentic Service Template will be documented in this file.
+All notable changes to the Prompt Chaining Template will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -353,6 +353,56 @@ curl -H "X-Request-ID: my-trace-123" http://localhost:8000/v1/chat/completions \
 - ✅ Integration tests verify middleware generation and agent propagation
 - ✅ End-to-end tests verify complete request lifecycle
 - ✅ Test environment setup via conftest.py with required env vars
+
+## [0.4.0] - 2025-11-12
+
+### Added
+- **Prompt-Chaining Configuration Documentation** - Comprehensive guide for tuning and customizing chain steps
+  - Updated CLAUDE.md with "Chain Configuration Reference" section
+  - Added per-step model selection guidance (Haiku vs Sonnet recommendations)
+  - Per-step temperature tuning guide with use case examples
+  - Per-step token limit recommendations (analyze: 500-2048, process: 1500-3000, synthesize: 500-2000)
+  - Per-step timeout configuration with latency SLA examples
+  - Cost breakdown by model with example calculations
+  - Cost optimization strategies (Haiku-first, selective Sonnet upgrade, token tuning)
+  - Updated README.md with "Configuration & Tuning Guide"
+  - Quick configuration examples (cost-optimized, balanced, high-accuracy)
+  - Temperature and token limit tuning tables with practical guidance
+  - Timeout tuning for different SLAs (p99 <5s, <8s, <15s)
+  - Decision tree for model selection based on task requirements
+  - Updated ARCHITECTURE.md with "Configuration Best Practices"
+  - Cost optimization strategies with per-step analysis
+  - Performance tuning for different latency requirements
+  - Four production-ready configuration patterns with cost/speed tradeoffs
+  - Troubleshooting guide for common configuration issues
+
+### Documentation
+- **CLAUDE.md**: Added 180+ lines documenting chain configuration
+  - Marked legacy orchestrator-worker model variables as deprecated
+  - Comprehensive environment variable reference for all CHAIN_* settings
+  - Model selection guidance for analyze/process/synthesize steps
+  - Temperature tuning recommendations per step
+  - Token limit adjustment strategies
+  - Timeout configuration with practical examples
+  - Cost monitoring and optimization tips
+  - Validation gate configuration (enable/disable, strict/lenient modes)
+- **README.md**: Added 149 lines with practical tuning guidance
+  - Quick-start configuration profiles (3 pre-built examples)
+  - Temperature tuning table with use cases
+  - Token limit ranges for different response types
+  - Timeout tuning for different SLAs
+  - Decision tree for configuration selection
+- **ARCHITECTURE.md**: Added 288 lines with best practices
+  - Cost breakdown and optimization strategies
+  - Performance analysis per step
+  - Four production-ready patterns with metrics
+  - Comprehensive troubleshooting guide
+
+### Notes
+- Task 8.1 (Configuration Implementation) was already complete from earlier tasks
+- Task 8.2 (Documentation Updates) completed in this release
+- All configuration parameters from design document fully implemented and documented
+- Zero breaking changes; fully backward compatible with existing configurations
 
 ---
 
