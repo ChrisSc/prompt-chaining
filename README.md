@@ -507,7 +507,7 @@ CHAIN_ANALYZE_TIMEOUT=15
 CHAIN_PROCESS_TIMEOUT=30
 CHAIN_SYNTHESIZE_TIMEOUT=20
 ```
-Cost per request: ~$0.0065 | Speed: 4-8s total
+Cost per request: ~$0.0059 | Speed: 4-8s total
 
 **Balanced Quality** (best for most use cases):
 ```env
@@ -530,7 +530,7 @@ CHAIN_ANALYZE_TIMEOUT=15
 CHAIN_PROCESS_TIMEOUT=45
 CHAIN_SYNTHESIZE_TIMEOUT=20
 ```
-Cost per request: ~$0.0072 | Speed: 5-10s total
+Cost per request: ~$0.0107 | Speed: 5-10s total
 
 **High Accuracy** (expensive, use only when quality critical):
 ```env
@@ -550,7 +550,7 @@ CHAIN_ANALYZE_TIMEOUT=30
 CHAIN_PROCESS_TIMEOUT=60
 CHAIN_SYNTHESIZE_TIMEOUT=30
 ```
-Cost per request: ~$0.0240 | Speed: 8-15s total
+Cost per request: ~$0.0177 | Speed: 8-15s total
 
 #### Temperature Tuning
 
@@ -814,10 +814,10 @@ Critical variables:
 - `JWT_SECRET_KEY` - **Required** for authentication (minimum 32 characters)
 - `JWT_ALGORITHM` - JWT algorithm (default: HS256)
 
-**Orchestrator Models** (legacy, for backward compatibility):
-- `ORCHESTRATOR_MODEL` - Model for orchestrator (default: claude-sonnet-4-5-20250929)
-- `WORKER_MODEL` - Model for workers (default: claude-haiku-4-5-20251001)
-- `SYNTHESIZER_MODEL` - Model for synthesizer (default: claude-haiku-4-5-20251001)
+**Orchestrator Models** (deprecated - use CHAIN_* variables instead):
+- `ORCHESTRATOR_MODEL` - **(deprecated)** Model for orchestrator (default: claude-sonnet-4-5-20250929)
+- `WORKER_MODEL` - **(deprecated)** Model for workers (default: claude-haiku-4-5-20251001)
+- `SYNTHESIZER_MODEL` - **(deprecated)** Model for synthesizer (default: claude-haiku-4-5-20251001)
 
 **Prompt-Chain Step Models** (per-step configuration):
 - `CHAIN_ANALYZE_MODEL` - Model for analysis step (default: claude-haiku-4-5-20251001)

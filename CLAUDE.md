@@ -173,22 +173,22 @@ Each step in the prompt-chaining workflow can be independently tuned for your sp
 **Example Cost Calculations** (per request):
 ```
 All-Haiku Config (typical):
-  Analyze:   250 input + 150 output  = $0.00125
-  Process:   400 input + 400 output  = $0.00300
-  Synthesize: 500 input + 400 output = $0.00350
-  Total: ~$0.00775 per request
+  Analyze:   250 input + 150 output  = $0.00100
+  Process:   400 input + 400 output  = $0.00240
+  Synthesize: 500 input + 400 output = $0.00250
+  Total: ~$0.00590 per request
 
 Haiku + Sonnet + Haiku (balanced):
-  Analyze:    250 input + 150 output (Haiku) = $0.00125
-  Process:    400 input + 400 output (Sonnet) = $0.00240
-  Synthesize: 500 input + 400 output (Haiku) = $0.00350
-  Total: ~$0.00715 per request (slightly cheaper due to Process optimization)
+  Analyze:    250 input + 150 output (Haiku) = $0.00100
+  Process:    400 input + 400 output (Sonnet) = $0.00720
+  Synthesize: 500 input + 400 output (Haiku) = $0.00250
+  Total: ~$0.01070 per request
 
 All-Sonnet Config (rarely needed):
-  Analyze:    250 input + 150 output = $0.00120
-  Process:    400 input + 400 output = $0.00240
-  Synthesize: 500 input + 400 output = $0.00270
-  Total: ~$0.00630 per request (cheaper due to Sonnet pricing on higher token counts)
+  Analyze:    250 input + 150 output = $0.00300
+  Process:    400 input + 400 output = $0.00720
+  Synthesize: 500 input + 400 output = $0.00750
+  Total: ~$0.01770 per request
 ```
 
 **Cost Optimization Strategies**:

@@ -1580,28 +1580,28 @@ This section provides production guidance for optimizing the prompt-chaining wor
 Analyze Step (Intent Extraction)
   - Input: 250 tokens (user message + system prompt)
   - Output: 150 tokens (intent, entities, complexity)
-  - Cost: $0.25 * 0.001 + $0.15 * 0.005 = $0.00125
+  - Cost: (250 * $1/1M) + (150 * $5/1M) = $0.00100
 
 Process Step (Content Generation)
   - Input: 400 tokens (analysis output + system prompt + context)
   - Output: 400 tokens (generated content)
-  - Cost: $0.40 * 0.001 + $0.40 * 0.005 = $0.00300
+  - Cost: (400 * $1/1M) + (400 * $5/1M) = $0.00240
 
 Synthesize Step (Formatting & Polishing)
   - Input: 500 tokens (process output + system prompt + context)
   - Output: 400 tokens (formatted response)
-  - Cost: $0.50 * 0.001 + $0.40 * 0.005 = $0.00350
+  - Cost: (500 * $1/1M) + (400 * $5/1M) = $0.00250
 
-Total per request: $0.00775
+Total per request: $0.00590
 ```
 
 **Configuration Cost Impact** (per request, 1000 user message tokens):
 
 | Configuration | Analyze Cost | Process Cost | Synthesize Cost | Total Cost | Speed | Use Case |
 |--|--|--|--|--|--|--|
-| All-Haiku | $0.00125 | $0.00300 | $0.00350 | $0.00775 | 4-8s | Cost-optimized, fast |
-| Haiku + Sonnet + Haiku | $0.00125 | $0.00600 | $0.00350 | $0.01075 | 5-10s | Balanced quality/cost |
-| All-Sonnet | $0.00250 | $0.01200 | $0.00700 | $0.02150 | 8-15s | Max quality (expensive) |
+| All-Haiku | $0.00100 | $0.00240 | $0.00250 | $0.00590 | 4-8s | Cost-optimized, fast |
+| Haiku + Sonnet + Haiku | $0.00100 | $0.00720 | $0.00250 | $0.01070 | 5-10s | Balanced quality/cost |
+| All-Sonnet | $0.00300 | $0.00720 | $0.00750 | $0.01770 | 8-15s | Max quality (expensive) |
 
 **Cost Optimization Strategies**:
 1. Start with all-Haiku baseline ($0.01/req)
