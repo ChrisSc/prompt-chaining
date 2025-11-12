@@ -7,7 +7,6 @@ without tokens, and proper HTTP status codes are returned for various auth scena
 
 import os
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, patch
 
 import jwt
 import pytest
@@ -15,11 +14,6 @@ from fastapi.testclient import TestClient
 
 from workflow.config import Settings
 from workflow.main import create_app
-from workflow.models.openai import (
-    ChatCompletionChunk,
-    ChatCompletionStreamChoice,
-    ChoiceDelta,
-)
 
 # Use a consistent secret key for all tests
 TEST_JWT_SECRET = "test_secret_key_with_minimum_32_characters_required_for_testing"
@@ -96,63 +90,24 @@ def invalid_signature_token(jwt_settings: Settings) -> str:
 
 
 @pytest.fixture
-def app_with_mocks(jwt_settings: Settings):
-    """Create FastAPI app with mocked orchestrator."""
-    with patch("workflow.main.Orchestrator") as mock_orchestrator_class:
-        mock_orchestrator = AsyncMock()
-        mock_orchestrator.model = "claude-sonnet-4-5-20250929"
-        mock_orchestrator_class.return_value = mock_orchestrator
-
-        app = create_app()
-        app.state.orchestrator = mock_orchestrator
-        app.state.settings = jwt_settings
-
-    return app
+def app(jwt_settings: Settings):
+    """Create FastAPI app for testing."""
+    return create_app()
 
 
 @pytest.fixture
-def client(app_with_mocks):
+def client(app):
     """Create test client from app."""
-    return TestClient(app_with_mocks)
+    return TestClient(app)
 
 
 class TestChatEndpointAuth:
     """Test authentication on chat completions endpoint."""
 
     def test_chat_endpoint_with_valid_token(
-        self, client: TestClient, valid_token: str, app_with_mocks
+        self, client: TestClient, valid_token: str
     ) -> None:
         """Test POST to /v1/chat/completions with valid token succeeds."""
-
-        # Mock the orchestrator to return a valid response
-        async def mock_process(request):
-            yield ChatCompletionChunk(
-                id="test-1",
-                created=0,
-                model="test",
-                choices=[
-                    ChatCompletionStreamChoice(
-                        index=0,
-                        delta=ChoiceDelta(role="assistant", content="Hello"),
-                        finish_reason=None,
-                    )
-                ],
-            )
-            yield ChatCompletionChunk(
-                id="test-2",
-                created=0,
-                model="test",
-                choices=[
-                    ChatCompletionStreamChoice(
-                        index=0,
-                        delta=ChoiceDelta(),
-                        finish_reason="stop",
-                    )
-                ],
-            )
-
-        app_with_mocks.state.orchestrator.process = mock_process
-
         request_body = {
             "model": "test-service",
             "messages": [{"role": "user", "content": "Hello"}],

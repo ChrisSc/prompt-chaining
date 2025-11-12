@@ -5,7 +5,7 @@ ENV/
 env/
 
 # Testing artifacts
-tests/
+# NOTE: tests/ is excluded in production but included for container testing
 .pytest_cache/
 htmlcov/
 .coverage

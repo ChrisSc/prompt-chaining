@@ -13,6 +13,7 @@ from workflow.models.internal import (
     TokenUsage,
 )
 from workflow.utils.token_tracking import (
+    aggregate_step_metrics,
     aggregate_token_metrics,
     calculate_cost,
     get_model_pricing,
@@ -455,3 +456,144 @@ class TestRealisticScenarios:
         # Verify costs are reasonable
         assert total_cost > 0
         assert total_cost < 0.5  # Should be less than 50 cents
+
+
+class TestAggregateStepMetrics:
+    """Test aggregate_step_metrics function for prompt-chaining workflow."""
+
+    def test_aggregate_step_metrics_single_step(self):
+        """Test aggregating metrics from a single step."""
+        step_metadata = {
+            "analyze": {
+                "elapsed_seconds": 1.5,
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "total_tokens": 150,
+                "cost_usd": 0.00015,
+            }
+        }
+
+        total_tokens, total_cost, total_elapsed = aggregate_step_metrics(step_metadata)
+
+        assert total_tokens == 150
+        assert total_cost == 0.00015
+        assert total_elapsed == 1.5
+
+    def test_aggregate_step_metrics_all_steps(self):
+        """Test aggregating metrics from all three steps."""
+        step_metadata = {
+            "analyze": {
+                "elapsed_seconds": 1.5,
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "total_tokens": 150,
+                "cost_usd": 0.00015,
+            },
+            "process": {
+                "elapsed_seconds": 2.0,
+                "input_tokens": 200,
+                "output_tokens": 300,
+                "total_tokens": 500,
+                "cost_usd": 0.00050,
+            },
+            "synthesize": {
+                "elapsed_seconds": 1.5,
+                "input_tokens": 150,
+                "output_tokens": 200,
+                "total_tokens": 350,
+                "cost_usd": 0.00035,
+            },
+        }
+
+        total_tokens, total_cost, total_elapsed = aggregate_step_metrics(step_metadata)
+
+        assert total_tokens == 1000
+        assert total_cost == 0.00100
+        assert total_elapsed == 5.0
+
+    def test_aggregate_step_metrics_empty(self):
+        """Test aggregating empty metrics."""
+        step_metadata = {}
+
+        total_tokens, total_cost, total_elapsed = aggregate_step_metrics(step_metadata)
+
+        assert total_tokens == 0
+        assert total_cost == 0.0
+        assert total_elapsed == 0.0
+
+    def test_aggregate_step_metrics_with_error_entry(self):
+        """Test aggregating metrics with error entry (should be skipped)."""
+        step_metadata = {
+            "analyze": {
+                "elapsed_seconds": 1.5,
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "total_tokens": 150,
+                "cost_usd": 0.00015,
+            },
+            "error": {
+                "occurred": True,
+                "message": "Some error",
+            }
+        }
+
+        total_tokens, total_cost, total_elapsed = aggregate_step_metrics(step_metadata)
+
+        # Error entry should be skipped
+        assert total_tokens == 150
+        assert total_cost == 0.00015
+        assert total_elapsed == 1.5
+
+    def test_aggregate_step_metrics_missing_fields(self):
+        """Test aggregating metrics with missing optional fields."""
+        step_metadata = {
+            "analyze": {
+                "elapsed_seconds": 1.5,
+                "total_tokens": 150,
+                "cost_usd": 0.00015,
+            },
+            "process": {
+                "elapsed_seconds": 2.0,
+                "total_tokens": 500,
+                "cost_usd": 0.00050,
+            },
+        }
+
+        total_tokens, total_cost, total_elapsed = aggregate_step_metrics(step_metadata)
+
+        assert total_tokens == 650
+        assert total_cost == 0.00065
+        assert total_elapsed == 3.5
+
+    def test_aggregate_step_metrics_realistic_haiku_scenario(self):
+        """Test realistic scenario with All-Haiku configuration."""
+        step_metadata = {
+            "analyze": {
+                "elapsed_seconds": 1.2,
+                "input_tokens": 250,
+                "output_tokens": 150,
+                "total_tokens": 400,
+                "cost_usd": (250 / 1_000_000) * 1.0 + (150 / 1_000_000) * 5.0,
+            },
+            "process": {
+                "elapsed_seconds": 2.3,
+                "input_tokens": 400,
+                "output_tokens": 450,
+                "total_tokens": 850,
+                "cost_usd": (400 / 1_000_000) * 1.0 + (450 / 1_000_000) * 5.0,
+            },
+            "synthesize": {
+                "elapsed_seconds": 1.5,
+                "input_tokens": 500,
+                "output_tokens": 300,
+                "total_tokens": 800,
+                "cost_usd": (500 / 1_000_000) * 1.0 + (300 / 1_000_000) * 5.0,
+            },
+        }
+
+        total_tokens, total_cost, total_elapsed = aggregate_step_metrics(step_metadata)
+
+        assert total_tokens == 2050
+        assert total_cost > 0
+        assert total_cost < 0.01  # Haiku should be cheap
+        assert total_elapsed == 5.0  # 1.2 + 2.3 + 1.5

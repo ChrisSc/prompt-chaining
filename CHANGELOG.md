@@ -354,6 +354,48 @@ curl -H "X-Request-ID: my-trace-123" http://localhost:8000/v1/chat/completions \
 - ✅ End-to-end tests verify complete request lifecycle
 - ✅ Test environment setup via conftest.py with required env vars
 
+## [0.4.1] - 2025-11-12
+
+### Added
+- **Task 9: Performance Monitoring & Metrics Collection** - Comprehensive metrics aggregation and performance tracking
+  - Aggregated metrics logging per request with total tokens, cost, and elapsed time
+  - Per-step breakdown showing metrics for analyze, process, and synthesize steps
+  - LangGraph MemorySaver checkpointer integration for state management
+  - Performance benchmark script for model configuration comparison
+  - Enhanced documentation in ARCHITECTURE.md with "Performance Monitoring" section
+  - Enhanced documentation in CLAUDE.md with "Performance Monitoring" subsection
+  - Updated README.md features list with benchmark link
+  - New BENCHMARKS.md documentation file with methodology, results, and model selection guidance
+
+### Documentation
+- **ARCHITECTURE.md**: New "Performance Monitoring" section with:
+  - Metrics collection architecture and aggregation flow
+  - Example aggregated metrics log entry with detailed breakdown
+  - Token tracking utilities documentation
+  - LangGraph MemorySaver checkpointer integration details
+  - State storage structure and monitoring benefits
+- **CLAUDE.md**: Enhanced with "Performance Monitoring" section under Logging & Observability:
+  - Aggregated metrics collection explanation
+  - Commands for accessing and analyzing metrics via grep and jq
+  - Typical metrics for all-Haiku configuration
+  - Cost optimization strategies using collected metrics
+  - Benchmark script usage documentation
+- **README.md**: Added feature bullet point for performance benchmarks with BENCHMARKS.md link
+- **BENCHMARKS.md** (new file): Comprehensive performance documentation
+  - Benchmark methodology and test configuration
+  - Performance results summary with p50/p95/p99 latency and cost metrics
+  - Model configuration guidance (all-Haiku baseline)
+  - Cost breakdown examples per step
+  - Instructions for running benchmark script
+  - Performance monitoring in production
+  - Model selection guide with cost/quality tradeoffs
+
+### Features Completed
+- Metrics collection across all three prompt-chaining steps
+- Aggregated logging with per-step breakdown
+- LangGraph MemorySaver state management integration
+- Performance benchmark infrastructure
+
 ## [0.4.0] - 2025-11-12
 
 ### Added

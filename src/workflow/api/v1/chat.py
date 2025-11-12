@@ -18,6 +18,7 @@ from workflow.utils.message_conversion import (
     convert_langchain_chunk_to_openai,
     convert_openai_to_langchain_messages,
 )
+from workflow.utils.token_tracking import aggregate_step_metrics
 
 logger = get_logger(__name__)
 
@@ -166,6 +167,7 @@ async def create_chat_completion(
                 extra={"use_chain_graph": chain_graph is not None},
             )
             chunk_count = 0
+            final_step_metadata = {}
 
             # Use prompt-chaining workflow via LangGraph
             if chain_graph is None:
@@ -194,6 +196,10 @@ async def create_chat_completion(
             async for state_update in stream_chain(
                 chain_graph, initial_state, settings.chain_config
             ):
+                # Capture step metadata for aggregation
+                if "step_metadata" in state_update:
+                    final_step_metadata.update(state_update.get("step_metadata", {}))
+
                 # Extract content from the state update and convert to OpenAI format
                 try:
                     chunk = convert_langchain_chunk_to_openai(state_update)
@@ -211,14 +217,25 @@ async def create_chat_completion(
             # Send final [DONE] marker
             yield "data: [DONE]\n\n"
 
-            # Log request completion with timing
+            # Log request completion with aggregated metrics
             elapsed_time = time.time() - request_start_time
+
+            # Calculate aggregated metrics from step metadata
+            if final_step_metadata:
+                total_tokens, total_cost_usd, aggregated_elapsed = aggregate_step_metrics(final_step_metadata)
+            else:
+                total_tokens, total_cost_usd, aggregated_elapsed = 0, 0.0, 0.0
+
             logger.info(
-                "Chat completion request completed",
+                "Request completed",
                 extra={
-                    "model": request_data.model,
-                    "elapsed_seconds": elapsed_time,
-                    "chunk_count": chunk_count,
+                    "request_id": request.headers.get("X-Request-ID", "unknown"),
+                    "total_tokens": total_tokens,
+                    "total_cost_usd": total_cost_usd,
+                    "total_elapsed_seconds": elapsed_time,
+                    "aggregated_step_elapsed_seconds": aggregated_elapsed,
+                    "step_breakdown": final_step_metadata,
+                    "status": "success",
                 },
             )
             logger.debug(
@@ -226,6 +243,8 @@ async def create_chat_completion(
                 extra={
                     "chunk_count": chunk_count,
                     "elapsed_seconds": elapsed_time,
+                    "model": request_data.model,
+                    "user": user_subject,
                 },
             )
 

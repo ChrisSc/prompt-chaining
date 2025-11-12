@@ -1,38 +1,43 @@
 """
 End-to-end integration tests for request ID propagation through chat completions.
 
-Tests the full request lifecycle from API endpoint to agent execution, verifying that
-request IDs are properly propagated through orchestrator, workers, and synthesizer.
-Uses mocked Anthropic API to avoid external dependencies while testing complete flow.
+Tests the full request lifecycle from API endpoint to chat completions, verifying that
+request IDs are properly propagated through the workflow and returned in response headers.
+Tests request ID generation, custom request ID handling, and request ID persistence.
 """
 
-from unittest.mock import MagicMock, patch
+import os
 
 import jwt
 import pytest
 from fastapi.testclient import TestClient
 
-from workflow.config import Settings
 from workflow.main import create_app
-from workflow.models.openai import ChatCompletionChunk, ChoiceDelta
 from workflow.utils.request_context import (
     _request_id_var,
     get_request_id,
 )
 
+# Use a consistent secret key for all tests
+TEST_JWT_SECRET = "test_secret_key_with_minimum_32_characters_required_for_testing"
+
+
+@pytest.fixture(autouse=True)
+def set_test_env() -> None:
+    """Set test environment variables before each test."""
+    os.environ["ANTHROPIC_API_KEY"] = "test-key-123"
+    os.environ["JWT_SECRET_KEY"] = TEST_JWT_SECRET
+    os.environ["JWT_ALGORITHM"] = "HS256"
+    os.environ["ENVIRONMENT"] = "development"
+    os.environ["LOG_LEVEL"] = "DEBUG"
+    yield
+    # Cleanup
+    for key in ["ANTHROPIC_API_KEY", "JWT_SECRET_KEY", "JWT_ALGORITHM", "ENVIRONMENT", "LOG_LEVEL"]:
+        os.environ.pop(key, None)
+
 
 @pytest.fixture
-def settings() -> Settings:
-    """Create test settings."""
-    return Settings(
-        anthropic_api_key="test-key-123",
-        jwt_secret_key="test_secret_key_with_minimum_32_characters_required_for_testing",
-        environment="test",
-    )
-
-
-@pytest.fixture
-def app(settings):
+def app():
     """Create FastAPI app for testing."""
     return create_app()
 
@@ -44,11 +49,11 @@ def client(app):
 
 
 @pytest.fixture
-def valid_token(settings) -> str:
+def valid_token() -> str:
     """Generate valid JWT token for testing."""
     return jwt.encode(
         {"sub": "test-user", "iat": 1234567890},
-        settings.jwt_secret_key,
+        TEST_JWT_SECRET,
         algorithm="HS256",
     )
 
@@ -62,66 +67,37 @@ class TestChatCompletionsRequestIdFlow:
 
     def test_request_id_generated_for_post_request(self, client, valid_token) -> None:
         """Test that POST requests without custom ID get generated IDs."""
-        with patch("workflow.agents.orchestrator.Orchestrator.process") as mock_process:
-            # Mock the orchestrator response
-            async def mock_streaming():
-                chunk = ChatCompletionChunk(
-                    choices=[
-                        MagicMock(
-                            delta=ChoiceDelta(content="test response"),
-                            finish_reason=None,
-                        )
-                    ]
-                )
-                yield chunk
+        response = client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {valid_token}"},
+            json={
+                "model": "orchestrator-worker",
+                "messages": [{"role": "user", "content": "test"}],
+            },
+        )
 
-            mock_process.return_value = mock_streaming()
-
-            response = client.post(
-                "/v1/chat/completions",
-                headers={"Authorization": f"Bearer {valid_token}"},
-                json={
-                    "model": "orchestrator-worker",
-                    "messages": [{"role": "user", "content": "test"}],
-                },
-            )
-
-            assert "X-Request-ID" in response.headers
-            assert response.headers["X-Request-ID"].startswith("req_")
+        # Request ID should be generated and returned in response headers
+        assert "X-Request-ID" in response.headers
+        assert response.headers["X-Request-ID"].startswith("req_")
 
     def test_custom_request_id_propagated_through_endpoints(self, client, valid_token) -> None:
         """Test custom request ID from header is used through endpoints."""
         custom_id = "req_e2e_test_123"
 
-        with patch("workflow.agents.orchestrator.Orchestrator.process") as mock_process:
+        response = client.post(
+            "/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {valid_token}",
+                "X-Request-ID": custom_id,
+            },
+            json={
+                "model": "orchestrator-worker",
+                "messages": [{"role": "user", "content": "test"}],
+            },
+        )
 
-            async def mock_streaming():
-                chunk = ChatCompletionChunk(
-                    choices=[
-                        MagicMock(
-                            delta=ChoiceDelta(content="test"),
-                            finish_reason=None,
-                        )
-                    ]
-                )
-                yield chunk
-
-            mock_process.return_value = mock_streaming()
-
-            response = client.post(
-                "/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {valid_token}",
-                    "X-Request-ID": custom_id,
-                },
-                json={
-                    "model": "orchestrator-worker",
-                    "messages": [{"role": "user", "content": "test"}],
-                },
-            )
-
-            # Response should contain the custom request ID
-            assert response.headers["X-Request-ID"] == custom_id
+        # Response should contain the custom request ID
+        assert response.headers["X-Request-ID"] == custom_id
 
     def test_request_id_in_health_endpoint(self, client) -> None:
         """Test request ID is available in health endpoint."""
@@ -151,48 +127,32 @@ class TestChatCompletionsRequestIdFlow:
         assert response.headers["X-Request-ID"] == custom_id
 
 
-class TestOrchestratorReceivesRequestId:
-    """Test that orchestrator receives request ID in context."""
+class TestChainWorkflowReceivesRequestId:
+    """Test that chain workflow receives request ID in context."""
 
     def setup_method(self) -> None:
         """Reset context before each test."""
         _request_id_var.set(None)
 
-    def test_orchestrator_can_access_request_id_in_context(self, client, valid_token) -> None:
-        """Test that orchestrator has access to request ID during processing."""
-        custom_id = "req_orchestrator_access"
-        captured_ids = []
+    def test_workflow_can_access_request_id_in_context(self, client, valid_token) -> None:
+        """Test that workflow has access to request ID during processing."""
+        custom_id = "req_workflow_access"
 
-        async def capture_and_respond():
-            # Capture the request ID available to orchestrator
-            captured_ids.append(get_request_id())
-            chunk = ChatCompletionChunk(
-                choices=[
-                    MagicMock(
-                        delta=ChoiceDelta(content="response"),
-                        finish_reason=None,
-                    )
-                ]
-            )
-            yield chunk
+        response = client.post(
+            "/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {valid_token}",
+                "X-Request-ID": custom_id,
+            },
+            json={
+                "model": "orchestrator-worker",
+                "messages": [{"role": "user", "content": "test"}],
+            },
+        )
 
-        with patch("workflow.agents.orchestrator.Orchestrator.process") as mock_process:
-            mock_process.return_value = capture_and_respond()
-
-            response = client.post(
-                "/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {valid_token}",
-                    "X-Request-ID": custom_id,
-                },
-                json={
-                    "model": "orchestrator-worker",
-                    "messages": [{"role": "user", "content": "test"}],
-                },
-            )
-
-            assert response.status_code == 200
-            assert response.headers["X-Request-ID"] == custom_id
+        # Workflow should propagate the request ID to response headers
+        assert response.status_code == 200
+        assert response.headers["X-Request-ID"] == custom_id
 
 
 class TestRequestIdErrorResponse:
@@ -359,36 +319,20 @@ class TestRequestIdWithLongRunningRequests:
         """Test request ID remains stable throughout request lifecycle."""
         custom_id = "req_stable_throughout"
 
-        with patch("workflow.agents.orchestrator.Orchestrator.process") as mock_process:
-            # Simulate longer operation with multiple yields
-            async def slow_stream():
-                for i in range(5):
-                    chunk = ChatCompletionChunk(
-                        choices=[
-                            MagicMock(
-                                delta=ChoiceDelta(content=f"chunk_{i}"),
-                                finish_reason=None if i < 4 else "stop",
-                            )
-                        ]
-                    )
-                    yield chunk
+        response = client.post(
+            "/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {valid_token}",
+                "X-Request-ID": custom_id,
+            },
+            json={
+                "model": "orchestrator-worker",
+                "messages": [{"role": "user", "content": "test"}],
+            },
+        )
 
-            mock_process.return_value = slow_stream()
-
-            response = client.post(
-                "/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {valid_token}",
-                    "X-Request-ID": custom_id,
-                },
-                json={
-                    "model": "orchestrator-worker",
-                    "messages": [{"role": "user", "content": "test"}],
-                },
-            )
-
-            # Response should contain the original request ID
-            assert response.headers["X-Request-ID"] == custom_id
+        # Response should contain the original request ID throughout the request
+        assert response.headers["X-Request-ID"] == custom_id
 
 
 class TestRequestIdFormats:

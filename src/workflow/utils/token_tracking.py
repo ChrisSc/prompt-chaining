@@ -161,3 +161,81 @@ def aggregate_token_metrics(
     )
 
     return total_tokens, total_cost_usd
+
+
+def aggregate_step_metrics(step_metadata: dict) -> tuple[int, float, float]:
+    """
+    Aggregate metrics across all steps in the prompt-chaining workflow.
+
+    This function sums up token usage and costs from individual steps
+    (analyze, process, synthesize) to provide aggregate metrics for the
+    entire request. It also aggregates elapsed time across all steps.
+
+    Args:
+        step_metadata: Dictionary with step names as keys, each containing:
+                      - elapsed_seconds: float
+                      - input_tokens: int
+                      - output_tokens: int
+                      - total_tokens: int
+                      - cost_usd: float
+
+    Returns:
+        Tuple of (total_tokens, total_cost_usd, total_elapsed_seconds)
+
+    Example:
+        >>> metadata = {
+        ...     "analyze": {
+        ...         "elapsed_seconds": 1.5,
+        ...         "input_tokens": 100,
+        ...         "output_tokens": 50,
+        ...         "total_tokens": 150,
+        ...         "cost_usd": 0.00015,
+        ...     },
+        ...     "process": {
+        ...         "elapsed_seconds": 2.0,
+        ...         "input_tokens": 200,
+        ...         "output_tokens": 300,
+        ...         "total_tokens": 500,
+        ...         "cost_usd": 0.00050,
+        ...     },
+        ...     "synthesize": {
+        ...         "elapsed_seconds": 1.5,
+        ...         "input_tokens": 150,
+        ...         "output_tokens": 200,
+        ...         "total_tokens": 350,
+        ...         "cost_usd": 0.00035,
+        ...     },
+        ... }
+        >>> total_tokens, total_cost, total_elapsed = aggregate_step_metrics(metadata)
+        >>> print(f"Total: {total_tokens} tokens, ${total_cost:.6f}, {total_elapsed:.2f}s")
+        Total: 1000 tokens, $0.000900, 5.00s
+    """
+    total_tokens = 0
+    total_cost_usd = 0.0
+    total_elapsed_seconds = 0.0
+
+    for step_name, step_info in step_metadata.items():
+        # Skip non-step entries (e.g., "error" metadata)
+        if not isinstance(step_info, dict):
+            continue
+
+        # Handle case where step contains nested step data
+        if step_name in ("analyze", "process", "synthesize"):
+            # Sum tokens
+            total_tokens += step_info.get("total_tokens", 0)
+            # Sum costs
+            total_cost_usd += step_info.get("cost_usd", 0.0)
+            # Sum elapsed time
+            total_elapsed_seconds += step_info.get("elapsed_seconds", 0.0)
+
+    logger.debug(
+        "Step metrics aggregated",
+        extra={
+            "total_tokens": total_tokens,
+            "total_cost_usd": total_cost_usd,
+            "total_elapsed_seconds": total_elapsed_seconds,
+            "steps_included": [s for s in step_metadata.keys() if s in ("analyze", "process", "synthesize")],
+        },
+    )
+
+    return total_tokens, total_cost_usd, total_elapsed_seconds

@@ -131,37 +131,37 @@ Refer to these documents for implementation details, patterns, and examples.
     - Verify timeout enforcement
     - _Requirements: 4.3, 4.4, 4.5_
 
-- [ ] 8. Update configuration for chain parameters
-  - [ ] 8.1 Add ChainConfig to Settings in `config.py`
+- [x] 8. Update configuration for chain parameters
+  - [x] 8.1 Add ChainConfig to Settings in `config.py`
     - Create default ChainConfig with standard values
     - Allow override via environment variables
     - _Requirements: 5.2, 5.4_
-  - [ ] 8.2 Update CLAUDE.md and README.md
+  - [x] 8.2 Update CLAUDE.md and README.md
     - Document chain configuration options
     - Add examples of customizing chain behavior
     - _Requirements: 5.1, 5.6_
 
-- [ ] 9. Performance optimization and monitoring
-  - [ ] 9.1 Add timing and metrics collection
+- [x] 9. Performance optimization and monitoring
+  - [x] 9.1 Add timing and metrics collection
     - Log duration of each chain step
     - Track total tokens and cost per request
     - Monitor memory usage with checkpointer
     - _Requirements: 4.4_
-  - [ ] 9.2 Create performance benchmarks
+  - [x] 9.2 Create performance benchmarks
     - Benchmark different model combinations
     - Document cost/latency tradeoffs
     - _Requirements: 4.1_
 
-- [ ] 10. Final documentation and cleanup
-  - [ ] 10.1 Update ARCHITECTURE.md
+- [x] 10. Final documentation and cleanup
+  - [x] 10.1 Update ARCHITECTURE.md
     - Document LangGraph orchestration pattern
     - Add diagrams of chain flow
     - _Requirements: 5.1, 5.6_
-  - [ ] 10.2 Create PROMPT_CHAINING.md
+  - [x] 10.2 Create PROMPT_CHAINING.md
     - Comprehensive guide to understanding and customizing chain
     - Examples and troubleshooting
     - _Requirements: 5.1, 5.6_
-  - [ ] 10.3 Clean up old orchestrator-worker code (if not needed)
+  - [x] 10.3 Clean up old orchestrator-worker code (if not needed)
     - Remove or archive agents/orchestrator.py, agents/worker.py, agents/synthesizer.py
     - Update tests accordingly
     - _Requirements: 5.2, 5.3_

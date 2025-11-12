@@ -38,6 +38,7 @@ This template provides a complete foundation for creating prompt-chaining workfl
 - **Observability**: Comprehensive logging, error handling, and configuration
 - **Validation Gates**: Data quality enforcement between steps with schema validation and business rules (intent required, confidence >= 0.5). Invalid outputs route to error handler, preventing bad data from cascading through the workflow.
 - **Token Usage Tracking**: Automatic cost tracking with per-step token/cost logging for workflow validation and optimization. Every API call logs input/output tokens and USD costs, with aggregated metrics across all steps for complete cost visibility.
+- **Performance Benchmarks**: Includes benchmark script for measuring latency, cost, and token usage across different model configurations to guide model selection. See [BENCHMARKS.md](./BENCHMARKS.md) for performance data and analysis.
 - **Request ID Propagation**: Automatic end-to-end request tracing through all steps to Anthropic API for debugging and distributed tracing
 - **Request Size Validation**: Protects against memory exhaustion with configurable request body size limits (default 1MB)
 - **Request Timeout Enforcement**: Prevents runaway requests from consuming resources indefinitely. Separate timeouts for analysis (15s default), processing (30s default), and synthesis (20s default) phases ensure predictable behavior. Configurable via environment variables for different deployment requirements.
@@ -765,12 +766,13 @@ Common Docker commands for this project:
 
 ```bash
 # Build image (usually automatic with docker-compose)
-docker build -t orchestrator-worker:latest .
+docker build -t prompt-chaining:latest .
 
 # Start service (foreground - see logs in real-time)
 docker-compose up
 
 # Start service (background)
+
 docker-compose up -d
 
 # View logs
@@ -813,11 +815,6 @@ Critical variables:
 - `ANTHROPIC_API_KEY` - **Required** for Claude API access
 - `JWT_SECRET_KEY` - **Required** for authentication (minimum 32 characters)
 - `JWT_ALGORITHM` - JWT algorithm (default: HS256)
-
-**Orchestrator Models** (deprecated - use CHAIN_* variables instead):
-- `ORCHESTRATOR_MODEL` - **(deprecated)** Model for orchestrator (default: claude-sonnet-4-5-20250929)
-- `WORKER_MODEL` - **(deprecated)** Model for workers (default: claude-haiku-4-5-20251001)
-- `SYNTHESIZER_MODEL` - **(deprecated)** Model for synthesizer (default: claude-haiku-4-5-20251001)
 
 **Prompt-Chain Step Models** (per-step configuration):
 - `CHAIN_ANALYZE_MODEL` - Model for analysis step (default: claude-haiku-4-5-20251001)

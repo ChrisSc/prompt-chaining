@@ -44,9 +44,6 @@ This installs all dependencies including LangChain 1.0.0+ and LangGraph 1.0.0+, 
 - `API_HOST` (default: 0.0.0.0), `API_PORT` (default: 8000)
 - `LOG_LEVEL` (default: INFO), `LOG_FORMAT` (default: json)
 
-### Model Configuration
-- `ORCHESTRATOR_MODEL`, `WORKER_MODEL`, `SYNTHESIZER_MODEL` (deprecated - use CHAIN_* variables instead)
-
 ### Prompt-Chaining Configuration
 
 **Per-Step Model Selection**:
@@ -476,6 +473,80 @@ X-Request-ID: my-request-123
 - Context automatically isolated per request (async-safe)
 - Gracefully handles missing request IDs (no errors)
 - Works with concurrent requests without interference
+
+### Performance Monitoring
+
+The prompt-chaining workflow automatically collects comprehensive metrics across all processing steps for cost tracking, performance monitoring, and SLA validation.
+
+**Aggregated Metrics Collection**
+
+Each request logs complete metrics including:
+- **Total tokens**: Sum of input/output tokens across all three steps
+- **Total cost**: Sum of USD costs across all three steps
+- **Total elapsed time**: Complete request execution time in seconds
+- **Per-step breakdown**: Detailed metrics for analyze, process, and synthesize steps
+
+**Accessing Metrics**
+
+All metrics are logged at INFO level on request completion. View in structured JSON logs:
+
+```bash
+# View cost tracking for all requests
+grep "total_cost_usd" logs.json
+
+# Extract costs for cost analysis
+grep "total_cost_usd" logs.json | jq '.total_cost_usd' | sort -n
+
+# Find expensive requests (outliers)
+grep "total_cost_usd" logs.json | jq 'select(.total_cost_usd > 0.01)'
+
+# Analyze per-step costs
+grep "step_breakdown" logs.json | jq '.step_breakdown'
+
+# Monitor performance by request duration
+grep "total_elapsed_seconds" logs.json | jq '.total_elapsed_seconds' | sort -n
+```
+
+**Typical Metrics** (all-Haiku configuration):
+- Total cost per request: $0.005-$0.010 USD
+- Total elapsed time: 4-8 seconds
+- Analyze step: 1-2 seconds, $0.001 cost
+- Process step: 2-4 seconds, $0.002-$0.004 cost
+- Synthesize step: 1-2 seconds, $0.001-$0.002 cost
+
+**Cost Optimization via Metrics**
+
+Monitor actual costs and adjust configuration:
+
+```bash
+# 1. Capture baseline metrics for a day
+grep "total_cost_usd" logs.json > baseline.txt
+
+# 2. Calculate average cost per request
+jq -s 'map(.total_cost_usd) | add / length' baseline.txt
+
+# 3. Identify token consumption patterns
+grep "input_tokens\|output_tokens" logs.json | jq '.step_breakdown' | head -20
+
+# 4. Adjust configuration based on findings
+# If average cost too high: reduce token limits or downgrade models
+# If latency too high: reduce timeouts or complexity
+# If quality poor: upgrade to Sonnet or increase temperature
+```
+
+**Benchmark Script for Model Selection**
+
+Use the provided benchmark script to compare configurations:
+
+```bash
+# Prerequisites: Dev server running (./scripts/dev.sh)
+python scripts/benchmark_chain.py
+
+# Output: benchmark_results.json + markdown table
+# Shows: latency (p50/p95/p99), cost, tokens for all configurations
+```
+
+See [BENCHMARKS.md](./BENCHMARKS.md) for detailed performance data and model selection guidance.
 
 ### Error Handling
 Custom hierarchy in `utils/errors.py`:
