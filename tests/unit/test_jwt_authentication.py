@@ -13,8 +13,8 @@ import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 
-from orchestrator_worker.api.dependencies import verify_bearer_token
-from orchestrator_worker.config import Settings
+from workflow.api.dependencies import verify_bearer_token
+from workflow.config import Settings
 
 
 @pytest.fixture
@@ -74,7 +74,7 @@ class TestJWTVerification:
         """Test verification of a valid token."""
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=valid_token)
 
-        with patch("orchestrator_worker.api.dependencies.Settings", return_value=jwt_settings):
+        with patch("workflow.api.dependencies.Settings", return_value=jwt_settings):
             payload = await verify_bearer_token(credentials, jwt_settings)
 
         assert payload["sub"] == "test-client"
@@ -84,7 +84,7 @@ class TestJWTVerification:
         """Test that expired tokens are rejected."""
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=expired_token)
 
-        with patch("orchestrator_worker.api.dependencies.Settings", return_value=jwt_settings):
+        with patch("workflow.api.dependencies.Settings", return_value=jwt_settings):
             with pytest.raises(HTTPException) as exc_info:
                 await verify_bearer_token(credentials, jwt_settings)
 
@@ -99,7 +99,7 @@ class TestJWTVerification:
             scheme="Bearer", credentials=invalid_signature_token
         )
 
-        with patch("orchestrator_worker.api.dependencies.Settings", return_value=jwt_settings):
+        with patch("workflow.api.dependencies.Settings", return_value=jwt_settings):
             with pytest.raises(HTTPException) as exc_info:
                 await verify_bearer_token(credentials, jwt_settings)
 
@@ -110,7 +110,7 @@ class TestJWTVerification:
         """Test that malformed tokens are rejected."""
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="not.a.valid.jwt")
 
-        with patch("orchestrator_worker.api.dependencies.Settings", return_value=jwt_settings):
+        with patch("workflow.api.dependencies.Settings", return_value=jwt_settings):
             with pytest.raises(HTTPException) as exc_info:
                 await verify_bearer_token(credentials, jwt_settings)
 
@@ -130,7 +130,7 @@ class TestJWTVerification:
 
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
-        with patch("orchestrator_worker.api.dependencies.Settings", return_value=jwt_settings):
+        with patch("workflow.api.dependencies.Settings", return_value=jwt_settings):
             result = await verify_bearer_token(credentials, jwt_settings)
 
         assert result is not None
@@ -152,7 +152,7 @@ class TestJWTVerification:
 
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
-        with patch("orchestrator_worker.api.dependencies.Settings", return_value=jwt_settings):
+        with patch("workflow.api.dependencies.Settings", return_value=jwt_settings):
             result = await verify_bearer_token(credentials, jwt_settings)
 
         assert result["sub"] == "premium-client"
@@ -327,7 +327,7 @@ class TestOpenAICompatibility:
         invalid_token = "invalid.token.here"
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=invalid_token)
 
-        with patch("orchestrator_worker.api.dependencies.Settings", return_value=jwt_settings):
+        with patch("workflow.api.dependencies.Settings", return_value=jwt_settings):
             with pytest.raises(HTTPException) as exc_info:
                 await verify_bearer_token(credentials, jwt_settings)
 
@@ -341,7 +341,7 @@ class TestOpenAICompatibility:
         )
 
         # Mock jwt.decode to raise an unexpected exception
-        with patch("orchestrator_worker.api.dependencies.jwt.decode") as mock_decode:
+        with patch("workflow.api.dependencies.jwt.decode") as mock_decode:
             mock_decode.side_effect = RuntimeError("Unexpected error")
 
             with pytest.raises(HTTPException) as exc_info:

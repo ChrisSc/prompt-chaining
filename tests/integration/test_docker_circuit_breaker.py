@@ -5,10 +5,7 @@ Tests circuit breaker behavior in realistic scenarios with actual
 container execution, API failures, and state transitions.
 """
 
-import asyncio
-import json
 import subprocess
-import time
 
 import pytest
 
@@ -33,7 +30,7 @@ class TestDockerCircuitBreakerIntegration:
         if not result.stdout.strip():
             pytest.skip("Docker container not running. Start with: docker-compose up -d")
 
-        yield
+        return
 
         # Cleanup happens automatically with docker-compose down
 
@@ -47,7 +44,7 @@ class TestDockerCircuitBreakerIntegration:
                 "orchestrator-worker",
                 "python",
                 "-c",
-                "from orchestrator_worker.config import Settings; "
+                "from workflow.config import Settings; "
                 "s = Settings(); "
                 "print(f'{s.circuit_breaker_enabled}:{s.circuit_breaker_failure_threshold}:"
                 "{s.circuit_breaker_timeout}:{s.circuit_breaker_half_open_attempts}')",
@@ -70,7 +67,7 @@ class TestDockerCircuitBreakerIntegration:
     def test_circuit_breaker_initializes(self, docker_container):
         """Test circuit breaker initializes correctly in Docker."""
         test_script = """
-from orchestrator_worker.utils.circuit_breaker import CircuitBreaker, CircuitBreakerState
+from workflow.utils.circuit_breaker import CircuitBreaker, CircuitBreakerState
 
 cb = CircuitBreaker(service_name="test", failure_threshold=3, timeout=30)
 print(f"State: {cb.state.value}")
@@ -102,7 +99,7 @@ print(f"Service: {cb.service_name}")
     def test_circuit_opens_after_consecutive_failures(self, docker_container):
         """Test circuit opens after consecutive failures in Docker."""
         test_script = """
-from orchestrator_worker.utils.circuit_breaker import CircuitBreaker, CircuitBreakerState
+from workflow.utils.circuit_breaker import CircuitBreaker, CircuitBreakerState
 
 cb = CircuitBreaker(service_name="test", failure_threshold=3)
 
@@ -140,8 +137,8 @@ print("SUCCESS: Circuit opened after 3 failures")
     def test_circuit_blocks_requests_when_open(self, docker_container):
         """Test circuit blocks requests when open in Docker."""
         test_script = """
-from orchestrator_worker.utils.circuit_breaker import CircuitBreaker
-from orchestrator_worker.utils.errors import CircuitBreakerOpenError
+from workflow.utils.circuit_breaker import CircuitBreaker
+from workflow.utils.errors import CircuitBreakerOpenError
 
 cb = CircuitBreaker(service_name="test", failure_threshold=2)
 
@@ -184,7 +181,7 @@ except CircuitBreakerOpenError as e:
         """Test half-open state allows single test request in Docker."""
         test_script = """
 import asyncio
-from orchestrator_worker.utils.circuit_breaker import CircuitBreaker, CircuitBreakerState
+from workflow.utils.circuit_breaker import CircuitBreaker, CircuitBreakerState
 
 cb = CircuitBreaker(service_name="test", failure_threshold=2, timeout=1)
 
@@ -229,7 +226,7 @@ print("SUCCESS: Circuit transitioned to half-open")
     def test_circuit_closes_after_successful_recovery(self, docker_container):
         """Test circuit closes after successful recovery in Docker."""
         test_script = """
-from orchestrator_worker.utils.circuit_breaker import CircuitBreaker, CircuitBreakerState
+from workflow.utils.circuit_breaker import CircuitBreaker, CircuitBreakerState
 
 cb = CircuitBreaker(service_name="test", failure_threshold=2, half_open_attempts=1)
 
@@ -268,8 +265,8 @@ print("SUCCESS: Circuit closed after recovery")
         # Clear recent logs and trigger state changes
         test_script = """
 import logging
-from orchestrator_worker.utils.circuit_breaker import CircuitBreaker
-from orchestrator_worker.utils.logging import get_logger
+from workflow.utils.circuit_breaker import CircuitBreaker
+from workflow.utils.logging import get_logger
 
 # Set up logging
 logger = get_logger(__name__)
@@ -322,9 +319,9 @@ print("Circuit state transitions logged")
         test_script = """
 import asyncio
 import time
-from orchestrator_worker.config import Settings
-from orchestrator_worker.utils.circuit_breaker import create_retryable_anthropic_call
-from orchestrator_worker.utils.errors import AnthropicRateLimitError
+from workflow.config import Settings
+from workflow.utils.circuit_breaker import create_retryable_anthropic_call
+from workflow.utils.errors import AnthropicRateLimitError
 
 settings = Settings(
     retry_max_attempts=3,
@@ -391,13 +388,13 @@ print("SUCCESS: Exponential backoff working")
         """Test retry decorator integrates with circuit breaker."""
         test_script = """
 import asyncio
-from orchestrator_worker.config import Settings
-from orchestrator_worker.utils.circuit_breaker import (
+from workflow.config import Settings
+from workflow.utils.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerState,
     create_retryable_anthropic_call
 )
-from orchestrator_worker.utils.errors import AnthropicRateLimitError, CircuitBreakerOpenError
+from workflow.utils.errors import AnthropicRateLimitError, CircuitBreakerOpenError
 
 settings = Settings(
     retry_max_attempts=2,
@@ -457,8 +454,8 @@ except CircuitBreakerOpenError as e:
         test_script = """
 from anthropic import RateLimitError, APITimeoutError, InternalServerError
 from unittest.mock import Mock
-from orchestrator_worker.utils.anthropic_errors import map_anthropic_exception
-from orchestrator_worker.utils.errors import (
+from workflow.utils.anthropic_errors import map_anthropic_exception
+from workflow.utils.errors import (
     AnthropicRateLimitError,
     AnthropicTimeoutError,
     AnthropicServerError
@@ -512,7 +509,7 @@ print("SUCCESS: All exception mappings working")
         """Test complete circuit breaker lifecycle: CLOSED -> OPEN -> HALF_OPEN -> CLOSED."""
         test_script = """
 import asyncio
-from orchestrator_worker.utils.circuit_breaker import CircuitBreaker, CircuitBreakerState
+from workflow.utils.circuit_breaker import CircuitBreaker, CircuitBreakerState
 
 cb = CircuitBreaker(service_name="lifecycle", failure_threshold=2, timeout=1, half_open_attempts=1)
 

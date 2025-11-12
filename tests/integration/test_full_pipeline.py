@@ -9,10 +9,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from orchestrator_worker.agents.orchestrator import Orchestrator
-from orchestrator_worker.config import Settings
-from orchestrator_worker.models.internal import TaskResult
-from orchestrator_worker.models.openai import (
+from workflow.agents.orchestrator import Orchestrator
+from workflow.config import Settings
+from workflow.models.internal import TaskResult
+from workflow.models.openai import (
     ChatCompletionChunk,
     ChatCompletionRequest,
     ChatCompletionStreamChoice,
@@ -20,7 +20,7 @@ from orchestrator_worker.models.openai import (
     ChoiceDelta,
     MessageRole,
 )
-from orchestrator_worker.utils.errors import ExternalServiceError
+from workflow.utils.errors import ExternalServiceError
 
 
 @pytest.fixture
@@ -77,7 +77,7 @@ class TestOrchestratorWorkerIntegration:
 
     async def test_coordinate_workers_success(self, orchestrator: Orchestrator):
         """Test successful worker coordination."""
-        with patch("orchestrator_worker.agents.orchestrator.Worker") as mock_worker_class:
+        with patch("workflow.agents.orchestrator.Worker") as mock_worker_class:
             # Create mock workers
             mock_workers = [AsyncMock() for _ in range(2)]
 
@@ -112,7 +112,7 @@ class TestOrchestratorWorkerIntegration:
 
     async def test_coordinate_workers_partial_failure(self, orchestrator: Orchestrator):
         """Test worker coordination with one failed worker."""
-        with patch("orchestrator_worker.agents.orchestrator.Worker") as mock_worker_class:
+        with patch("workflow.agents.orchestrator.Worker") as mock_worker_class:
             mock_workers = [AsyncMock(), AsyncMock()]
 
             # First worker succeeds, second fails
@@ -134,7 +134,7 @@ class TestOrchestratorWorkerIntegration:
 
     async def test_orchestrator_initialization(self, orchestrator: Orchestrator):
         """Test orchestrator initialization."""
-        with patch("orchestrator_worker.agents.orchestrator.AsyncAnthropic") as mock_anthropic:
+        with patch("workflow.agents.orchestrator.AsyncAnthropic") as mock_anthropic:
             mock_client = AsyncMock()
             mock_anthropic.return_value = mock_client
 
@@ -145,7 +145,7 @@ class TestOrchestratorWorkerIntegration:
 
     async def test_orchestrator_shutdown(self, orchestrator: Orchestrator):
         """Test orchestrator shutdown."""
-        with patch("orchestrator_worker.agents.orchestrator.AsyncAnthropic") as mock_anthropic:
+        with patch("workflow.agents.orchestrator.AsyncAnthropic") as mock_anthropic:
             mock_client = AsyncMock()
             mock_anthropic.return_value = mock_client
             orchestrator.client = mock_client
@@ -166,7 +166,7 @@ class TestOrchestratorSynthesizerIntegration:
             TaskResult(task_id=2, output="Result 2", success=True),
         ]
 
-        with patch("orchestrator_worker.agents.orchestrator.Synthesizer") as mock_synth_class:
+        with patch("workflow.agents.orchestrator.Synthesizer") as mock_synth_class:
             mock_synthesizer = AsyncMock()
             mock_synth_class.return_value = mock_synthesizer
 
@@ -225,9 +225,9 @@ class TestFullPipelineIntegration:
         )
 
         with (
-            patch("orchestrator_worker.agents.orchestrator.AsyncAnthropic") as mock_anthropic_orch,
-            patch("orchestrator_worker.agents.orchestrator.Worker") as mock_worker_class,
-            patch("orchestrator_worker.agents.orchestrator.Synthesizer") as mock_synth_class,
+            patch("workflow.agents.orchestrator.AsyncAnthropic") as mock_anthropic_orch,
+            patch("workflow.agents.orchestrator.Worker") as mock_worker_class,
+            patch("workflow.agents.orchestrator.Synthesizer") as mock_synth_class,
         ):
 
             # Setup orchestrator client
@@ -351,9 +351,9 @@ class TestFullPipelineIntegration:
         )
 
         with (
-            patch("orchestrator_worker.agents.orchestrator.AsyncAnthropic") as mock_anthropic,
-            patch("orchestrator_worker.agents.orchestrator.Worker") as mock_worker_class,
-            patch("orchestrator_worker.agents.orchestrator.Synthesizer") as mock_synth_class,
+            patch("workflow.agents.orchestrator.AsyncAnthropic") as mock_anthropic,
+            patch("workflow.agents.orchestrator.Worker") as mock_worker_class,
+            patch("workflow.agents.orchestrator.Synthesizer") as mock_synth_class,
         ):
 
             mock_client = AsyncMock()
@@ -416,7 +416,7 @@ class TestErrorHandling:
         """Test that synthesizer errors propagate correctly."""
         task_results = [TaskResult(task_id=1, output="Result", success=True)]
 
-        with patch("orchestrator_worker.agents.orchestrator.Synthesizer") as mock_synth_class:
+        with patch("workflow.agents.orchestrator.Synthesizer") as mock_synth_class:
             mock_synthesizer = AsyncMock()
             mock_synth_class.return_value = mock_synthesizer
 

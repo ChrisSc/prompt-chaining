@@ -6,20 +6,18 @@ request IDs are properly propagated through orchestrator, workers, and synthesiz
 Uses mocked Anthropic API to avoid external dependencies while testing complete flow.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
-from typing import AsyncIterator
+from unittest.mock import MagicMock, patch
 
 import jwt
 import pytest
 from fastapi.testclient import TestClient
 
-from orchestrator_worker.config import Settings
-from orchestrator_worker.main import create_app
-from orchestrator_worker.models.openai import ChatCompletionChunk, ChoiceDelta
-from orchestrator_worker.utils.request_context import (
+from workflow.config import Settings
+from workflow.main import create_app
+from workflow.models.openai import ChatCompletionChunk, ChoiceDelta
+from workflow.utils.request_context import (
     _request_id_var,
     get_request_id,
-    set_request_id,
 )
 
 
@@ -64,7 +62,7 @@ class TestChatCompletionsRequestIdFlow:
 
     def test_request_id_generated_for_post_request(self, client, valid_token) -> None:
         """Test that POST requests without custom ID get generated IDs."""
-        with patch("orchestrator_worker.agents.orchestrator.Orchestrator.process") as mock_process:
+        with patch("workflow.agents.orchestrator.Orchestrator.process") as mock_process:
             # Mock the orchestrator response
             async def mock_streaming():
                 chunk = ChatCompletionChunk(
@@ -91,13 +89,12 @@ class TestChatCompletionsRequestIdFlow:
             assert "X-Request-ID" in response.headers
             assert response.headers["X-Request-ID"].startswith("req_")
 
-    def test_custom_request_id_propagated_through_endpoints(
-        self, client, valid_token
-    ) -> None:
+    def test_custom_request_id_propagated_through_endpoints(self, client, valid_token) -> None:
         """Test custom request ID from header is used through endpoints."""
         custom_id = "req_e2e_test_123"
 
-        with patch("orchestrator_worker.agents.orchestrator.Orchestrator.process") as mock_process:
+        with patch("workflow.agents.orchestrator.Orchestrator.process") as mock_process:
+
             async def mock_streaming():
                 chunk = ChatCompletionChunk(
                     choices=[
@@ -161,9 +158,7 @@ class TestOrchestratorReceivesRequestId:
         """Reset context before each test."""
         _request_id_var.set(None)
 
-    def test_orchestrator_can_access_request_id_in_context(
-        self, client, valid_token
-    ) -> None:
+    def test_orchestrator_can_access_request_id_in_context(self, client, valid_token) -> None:
         """Test that orchestrator has access to request ID during processing."""
         custom_id = "req_orchestrator_access"
         captured_ids = []
@@ -181,9 +176,7 @@ class TestOrchestratorReceivesRequestId:
             )
             yield chunk
 
-        with patch(
-            "orchestrator_worker.agents.orchestrator.Orchestrator.process"
-        ) as mock_process:
+        with patch("workflow.agents.orchestrator.Orchestrator.process") as mock_process:
             mock_process.return_value = capture_and_respond()
 
             response = client.post(
@@ -366,7 +359,7 @@ class TestRequestIdWithLongRunningRequests:
         """Test request ID remains stable throughout request lifecycle."""
         custom_id = "req_stable_throughout"
 
-        with patch("orchestrator_worker.agents.orchestrator.Orchestrator.process") as mock_process:
+        with patch("workflow.agents.orchestrator.Orchestrator.process") as mock_process:
             # Simulate longer operation with multiple yields
             async def slow_stream():
                 for i in range(5):

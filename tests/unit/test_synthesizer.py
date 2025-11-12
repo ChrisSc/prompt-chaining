@@ -8,11 +8,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from orchestrator_worker.agents.synthesizer import Synthesizer
-from orchestrator_worker.config import Settings
-from orchestrator_worker.models.internal import TaskResult
-from orchestrator_worker.models.openai import ChatCompletionRequest, ChatMessage, MessageRole
-from orchestrator_worker.utils.errors import ExternalServiceError
+from workflow.agents.synthesizer import Synthesizer
+from workflow.config import Settings
+from workflow.models.internal import TaskResult
+from workflow.models.openai import ChatCompletionRequest, ChatMessage, MessageRole
+from workflow.utils.errors import ExternalServiceError
 
 
 @pytest.fixture
@@ -67,7 +67,7 @@ class TestSynthesizerInitialization:
 
     async def test_synthesizer_initialize(self, synthesizer: Synthesizer):
         """Test Synthesizer initialization."""
-        with patch("orchestrator_worker.agents.synthesizer.AsyncAnthropic") as mock_anthropic:
+        with patch("workflow.agents.synthesizer.AsyncAnthropic") as mock_anthropic:
             mock_client = AsyncMock()
             mock_anthropic.return_value = mock_client
 
@@ -78,7 +78,7 @@ class TestSynthesizerInitialization:
 
     async def test_synthesizer_shutdown(self, synthesizer: Synthesizer):
         """Test Synthesizer shutdown."""
-        with patch("orchestrator_worker.agents.synthesizer.AsyncAnthropic") as mock_anthropic:
+        with patch("workflow.agents.synthesizer.AsyncAnthropic") as mock_anthropic:
             mock_client = AsyncMock()
             mock_anthropic.return_value = mock_client
             synthesizer.client = mock_client
@@ -123,7 +123,7 @@ class TestSynthesizerSynthesize:
     ):
         """Test successful synthesis with streaming response."""
         # Mock the Claude API
-        with patch("orchestrator_worker.agents.synthesizer.AsyncAnthropic") as mock_anthropic:
+        with patch("workflow.agents.synthesizer.AsyncAnthropic") as mock_anthropic:
             mock_client = AsyncMock()
             mock_anthropic.return_value = mock_client
 
@@ -191,7 +191,7 @@ class TestSynthesizerSynthesize:
             ),
         ]
 
-        with patch("orchestrator_worker.agents.synthesizer.AsyncAnthropic") as mock_anthropic:
+        with patch("workflow.agents.synthesizer.AsyncAnthropic") as mock_anthropic:
             mock_client = AsyncMock()
             mock_anthropic.return_value = mock_client
 
@@ -228,7 +228,7 @@ class TestSynthesizerSynthesize:
         self, synthesizer: Synthesizer, sample_task_results: list[TaskResult]
     ):
         """Test synthesize handles API errors gracefully."""
-        with patch("orchestrator_worker.agents.synthesizer.AsyncAnthropic") as mock_anthropic:
+        with patch("workflow.agents.synthesizer.AsyncAnthropic") as mock_anthropic:
             mock_client = AsyncMock()
             mock_anthropic.return_value = mock_client
 

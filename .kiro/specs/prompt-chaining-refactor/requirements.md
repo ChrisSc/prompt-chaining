@@ -97,9 +97,9 @@ This document specifies the requirements for refactoring the existing orchestrat
 
 #### Acceptance Criteria
 
-1. THE FastAPI Application SHALL organize chain step implementations in `src/orchestrator_worker/chains/` directory
-2. THE FastAPI Application SHALL store chain-specific models in `src/orchestrator_worker/models/chains.py`
-3. THE FastAPI Application SHALL keep system prompts in `src/orchestrator_worker/prompts/` with descriptive names
+1. THE FastAPI Application SHALL organize chain step implementations in `src/workflow/chains/` directory
+2. THE FastAPI Application SHALL store chain-specific models in `src/workflow/models/chains.py`
+3. THE FastAPI Application SHALL keep system prompts in `src/workflow/prompts/` with descriptive names
 4. THE FastAPI Application SHALL maintain utility modules for logging, errors, and token tracking
 5. THE FastAPI Application SHALL preserve the existing test structure with unit and integration tests
 

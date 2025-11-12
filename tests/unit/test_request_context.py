@@ -11,7 +11,7 @@ from contextvars import ContextVar
 
 import pytest
 
-from orchestrator_worker.utils.request_context import (
+from workflow.utils.request_context import (
     _request_id_var,
     get_request_id,
     set_request_id,
@@ -148,18 +148,16 @@ class TestAsyncContextIsolation:
 
         # Run many concurrent requests
         num_requests = 20
-        tasks = [
-            request_handler(f"req_concurrent_{i}", operations=5) for i in range(num_requests)
-        ]
+        tasks = [request_handler(f"req_concurrent_{i}", operations=5) for i in range(num_requests)]
 
         all_results = await asyncio.gather(*tasks)
 
         # Verify each request maintained its own ID throughout
         for i, results in enumerate(all_results):
             expected_id = f"req_concurrent_{i}"
-            assert all(r == expected_id for r in results), (
-                f"Request {i} had inconsistent IDs: {results}"
-            )
+            assert all(
+                r == expected_id for r in results
+            ), f"Request {i} had inconsistent IDs: {results}"
 
     @pytest.mark.asyncio
     async def test_request_id_survives_task_switching(self) -> None:

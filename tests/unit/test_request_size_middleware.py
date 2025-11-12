@@ -9,9 +9,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from orchestrator_worker.config import Settings
-from orchestrator_worker.middleware.request_size import request_size_validator
-from orchestrator_worker.utils.errors import RequestSizeError
+from workflow.config import Settings
+from workflow.middleware.request_size import request_size_validator
+from workflow.utils.errors import RequestSizeError
 
 
 class TestRequestSizeError:
@@ -34,7 +34,7 @@ class TestRequestSizeError:
 
     def test_request_size_error_inheritance(self) -> None:
         """Test RequestSizeError inherits from TemplateServiceError."""
-        from orchestrator_worker.utils.errors import TemplateServiceError
+        from workflow.utils.errors import TemplateServiceError
 
         error = RequestSizeError(actual_size=2_000_000, max_size=1_000_000)
         assert isinstance(error, TemplateServiceError)

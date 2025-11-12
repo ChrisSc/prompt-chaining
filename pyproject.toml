@@ -45,7 +45,7 @@ dev = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-orchestrator_worker = ["prompts/*.md"]
+workflow = ["prompts/*.md"]
 
 [tool.black]
 line-length = 100
@@ -73,12 +73,12 @@ strict_optional = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "--cov=src/orchestrator_worker --cov-report=html --cov-report=term"
+addopts = "--cov=src/workflow --cov-report=html --cov-report=term"
 markers = [
     "integration: integration tests that require live services",
     "docker: tests that require Docker container running",
 ]
 
 [tool.coverage.run]
-source = ["src/orchestrator_worker"]
+source = ["src/workflow"]
 omit = ["*/tests/*", "*/site-packages/*"]

@@ -78,7 +78,7 @@ class TestDockerfileStructure:
 
     def test_dockerfile_copies_app_code(self, dockerfile_content: str) -> None:
         """Test that Dockerfile copies application code."""
-        assert "COPY --chown=appuser:appuser src/orchestrator_worker" in dockerfile_content
+        assert "COPY --chown=appuser:appuser src/workflow" in dockerfile_content
 
     def test_dockerfile_copies_scripts(self, dockerfile_content: str) -> None:
         """Test that Dockerfile copies scripts directory."""
@@ -216,7 +216,7 @@ class TestDockerfileEntrypoint:
 
     def test_dockerfile_cmd_specifies_app(self, dockerfile_content: str) -> None:
         """Test that CMD specifies the app module."""
-        assert "orchestrator_worker.main:app" in dockerfile_content
+        assert "workflow.main:app" in dockerfile_content
 
     def test_dockerfile_cmd_binds_to_all_interfaces(self, dockerfile_content: str) -> None:
         """Test that CMD binds to all interfaces."""

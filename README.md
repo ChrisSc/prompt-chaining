@@ -1,47 +1,53 @@
-# Agentic Orchestrator-Worker Pattern Template
+# Prompt-Chaining Workflow Template
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Anthropic](https://img.shields.io/badge/Anthropic-Claude-ED8002?logo=anthropic)
+![LangChain](https://img.shields.io/badge/LangChain-1.0.0+-blue)
+![LangGraph](https://img.shields.io/badge/LangGraph-1.0.0+-blue)
 ![OpenAI API](https://img.shields.io/badge/OpenAI-API-412991?logo=openai)
 ![GitHub Template](https://img.shields.io/badge/GitHub-Template-blue?logo=github)
 
-A *github repository template* for scaffolding **agentic orchestrator-worker** services with Anthropic's Claude Code and OpenAI-compatible APIs. Built on the *proven* orchestrator-worker pattern with streaming SSE responses.
+A *github repository template* for scaffolding **prompt-chaining workflows** with Anthropic's Claude and OpenAI-compatible APIs. Built on the proven prompt-chaining pattern with LangGraph StateGraph orchestration and streaming SSE responses.
 
-In this pattern, a central orchestrator agent (ex. `claude-sonnet-4-5`) assigns tasks to worker agents (ex. `claude-haiku-4-5`) and manages their execution. The synthesizer agent (ex. `claude-haiku-4-5`) receives the results, aggregates, and returns a final response to the orchestrator agent. This pattern, similar to the Master-Worker Pattern in distributed computing, ensures efficient task delegation and centralized coordination while allowing workers to focus on specific, independent tasks. 
+In this pattern, sequential processing steps (Analysis, Processing, Synthesis) work together to handle complex multi-step reasoning tasks. Each step is independently configured with its own Claude model, token limits, and system prompt. State flows through the workflow via LangGraph's StateGraph, enabling structured outputs and validation gates between steps.
 
-![Alt Text](orchestrator-worker-pattern.jpg "Orchestrator-Worker Pattern")
+![Prompt Chaining Pattern](prompt-chaining.png "Prompt Chaining Pattern")
 
 ## Key components
-- **Orchestrator:** This central agent analyzes a user's request, decomposes it into a dynamic set of subtasks, and assigns them to the appropriate workers. It manages the overall workflow.
-- **Workers:** These are specialized agents that perform specific, focused subtasks. They are designed to be experts in a particular area and return high-quality results for their assigned jobs.
-- **Synthesizer:** This component receives the results from the various workers and aggregates them into a single, unified, and polished final response that addresses the original query.
+- **Analysis Agent:** Parses user intent, extracts key entities, assesses task complexity, and provides contextual information for subsequent steps. Returns `AnalysisOutput` with structured analysis data.
+- **Processing Agent:** Generates content based on analysis results with domain-specific logic. Returns `ProcessOutput` with generated content and confidence metrics.
+- **Synthesis Agent:** Polishes and formats the processed content into a final, user-ready response. Returns `SynthesisOutput` with structured formatting and styling applied.
+- **LangGraph StateGraph:** Orchestrates sequential step execution with message accumulation, validation gates, and step-specific timeouts via `ChainState` TypedDict.
 
 ## Overview
 
-This template provides a complete foundation for creating agentic services that:
-- Coordinate multiple AI agents in parallel
+This template provides a complete foundation for creating prompt-chaining workflows that:
+- Execute sequential multi-step AI reasoning tasks
 - Stream responses via Server-Sent Events (SSE)
 - Expose OpenAI-compatible APIs
-- Scale efficiently with asyncio
+- Provide structured outputs with type safety
+- Integrate with LangGraph StateGraph for complex workflows
 
 ## Features
 
-- **Multi-Agent Orchestration**: Orchestrator coordinates multiple worker agents in parallel
+- **Prompt-Chaining Pattern**: Sequential execution of Analysis, Processing, and Synthesis steps
+- **LangGraph Integration**: StateGraph orchestration with message accumulation and validation gates
 - **Streaming Responses**: Real-time SSE streaming compatible with OpenAI format
-- **Cost-Optimized**: Smart orchestrator (expensive model) + cheap workers = optimal economics
-- **True Parallelism**: Workers execute simultaneously via `asyncio.gather()`
+- **Structured Outputs**: Type-safe step models (AnalysisOutput, ProcessOutput, SynthesisOutput)
+- **Flexible Configuration**: Per-step model selection, token limits, temperature, and timeouts
 - **Observability**: Comprehensive logging, error handling, and configuration
-- **Token Usage Tracking**: Automatic cost tracking with per-agent token/cost logging for workflow validation and optimization. Every API call logs input/output tokens and USD costs, with aggregated metrics across workers and synthesizer for complete cost visibility.
-- **Request ID Propagation**: Automatic end-to-end request tracing through all agents to Anthropic API for debugging and distributed tracing
+- **Token Usage Tracking**: Automatic cost tracking with per-step token/cost logging for workflow validation and optimization. Every API call logs input/output tokens and USD costs, with aggregated metrics across all steps for complete cost visibility.
+- **Request ID Propagation**: Automatic end-to-end request tracing through all steps to Anthropic API for debugging and distributed tracing
 - **Request Size Validation**: Protects against memory exhaustion with configurable request body size limits (default 1MB)
-- **Request Timeout Enforcement**: Prevents runaway requests from consuming resources indefinitely. Separate timeouts for worker coordination (45s default) and synthesis (30s default) phases ensure predictable behavior. Configurable via environment variables for different deployment requirements.
+- **Request Timeout Enforcement**: Prevents runaway requests from consuming resources indefinitely. Separate timeouts for analysis (15s default), processing (30s default), and synthesis (20s default) phases ensure predictable behavior. Configurable via environment variables for different deployment requirements.
+- **Validation Gates**: Optional validation between steps with configurable strictness
 - **Circuit Breaker**: Automatic retry with exponential backoff for Anthropic API resilience
 - **Security Headers**: Standard HTTP security headers (X-Content-Type-Options, X-Frame-Options, X-XSS-Protection, Strict-Transport-Security) enabled by default to protect against common web attacks
 - **Rate Limiting**: Per-user JWT + IP-based, configurable limits, standard HTTP 429 responses
 - **FastAPI**: Modern async Python framework with automatic OpenAPI docs
-- **Type-Safe**: Full type hints and Pydantic validation
-- **LangChain Integration**: LangChain 1.0.0+ for building prompt chains and managing LLM interactions
-- **LangGraph Support**: LangGraph 1.0.0+ for composing multi-step agentic workflows and complex prompt-chaining patterns
+- **Type-Safe**: Full type hints and Pydantic v2 validation
+- **LangChain 1.0.0+**: For building prompt chains and managing LLM interactions
+- **LangGraph 1.0.0+**: For composing multi-step agentic workflows with StateGraph orchestration
 
 ## Quick Start
 
@@ -118,7 +124,7 @@ cp .env.example .env
 ```bash
 ./scripts/dev.sh
 # Or manually:
-# fastapi dev src/orchestrator_worker/main.py --host 0.0.0.0 --port 8000
+# fastapi dev src/workflow/main.py --host 0.0.0.0 --port 8000
 ```
 
 Navigate to:
@@ -191,107 +197,112 @@ See [JWT_AUTHENTICATION.md](./JWT_AUTHENTICATION.md) for complete authentication
 
 ## Architecture
 
-### Orchestrator-Worker Pattern
+### Prompt-Chaining Pattern
 
-**Orchestrator** (Smart Coordinator)
-- Model: Claude Sonnet 4.5 (expensive, intelligent)
-- Role: Parse intent, decompose tasks, coordinate workers, aggregate results
-- Parallelism: Spawns N workers and runs them via `asyncio.gather()`
+**Analysis Agent** (Intent Parser)
+- Model: Configurable (default: Claude Haiku 4.5)
+- Role: Parse user intent, extract key entities, assess complexity
+- Output: `AnalysisOutput` with structured analysis data
+- Execution: Runs with configurable timeout (default: 15s)
 
-**Worker** (Fast Executor)
-- Model: Claude Haiku 4.5 (cheap, fast)
-- Role: Execute specific tasks assigned by orchestrator
-- Isolation: Each worker has its own API connection and context
+**Processing Agent** (Content Generator)
+- Model: Configurable (default: Claude Haiku 4.5)
+- Role: Generate content based on analysis results
+- Output: `ProcessOutput` with generated content and confidence
+- Execution: Runs with configurable timeout (default: 30s)
 
-**Synthesizer** (Fast Aggregator & Presenter)
-- Model: Claude Haiku 4.5 (cheap, fast)
-- Role: Aggregates worker results, synthesizes into cohesive response
-- Responsibilities: Owns all aggregation logic, formatting, and final polishing
+**Synthesis Agent** (Polish & Format)
+- Model: Configurable (default: Claude Haiku 4.5)
+- Role: Combine and format content into final response
+- Output: `SynthesisOutput` with polished final text
+- Execution: Runs with configurable timeout (default: 20s)
 
 ### Performance Characteristics
 
-- **Time Complexity**: O(1) - constant time regardless of number of tasks
-- **Cost Complexity**: O(N) - same token cost as sequential
-- **Result**: 10-20x speedup at no additional cost
+- **Time Complexity**: O(N) where N = number of sequential steps (typically 3)
+- **Cost Complexity**: O(N) - same token cost as sequential processing
+- **Result**: Enables complex multi-step reasoning with structured outputs
 
-### The Force Multiplier Effect
+### Sequential Processing with State Management
 
-This architecture delivers dramatic improvements across three dimensions:
+This architecture delivers multi-step reasoning benefits:
 
-**Speed: 5-20x Faster**
-- **Sequential approach**: 5 tasks × 3 seconds = 15 seconds total
-- **Parallel approach**: max(5 tasks) = ~3 seconds total
-- Workers execute simultaneously via `asyncio.gather()`, so total time equals the longest single task, not the sum of all tasks
+**Structured Reasoning**
+- Analysis step extracts intent and context
+- Processing step builds on analysis results
+- Synthesis step polishes and formats output
+- Each step has its own prompt engineering and configuration
 
-**Scale: Handle More Without Bottlenecks**
-- Orchestrator spawns N workers dynamically based on task complexity
-- Each worker operates independently with its own API connection
-- No shared state or contention between workers
-- Scales horizontally: 10 workers cost the same time as 100 workers
+**State Continuity**
+- LangGraph StateGraph manages state flow through `ChainState`
+- Message accumulation via `add_messages` reducer maintains conversation context
+- Step outputs feed into subsequent steps as structured data
+- Metadata tracking across entire workflow
 
-**Cost: Same Economics, Better Results**
-- **Token cost remains O(N)**: You pay for what you process
-- **Smart model allocation**: Expensive Sonnet for orchestration (once), cheap Haiku for execution (N times)
-- **Cost example**: 5 tasks × 1000 tokens = 5000 tokens whether sequential or parallel
-- **Value multiplier**: Get 10-20x faster results for the same API cost
+**Flexibility**
+- Each step can use different Claude models (all Haiku, or mix Haiku + Sonnet)
+- Per-step token limits, temperature, and timeout configuration
+- Optional validation gates between steps with configurable strictness
+- Domain-customizable step outputs (AnalysisOutput, ProcessOutput, SynthesisOutput)
 
-**Why This Works**
-- API calls are I/O-bound, not CPU-bound
-- While Worker 1 waits for API response, Workers 2-N are also waiting in parallel
-- Python's async/await allows thousands of concurrent connections
-- Anthropic's API handles concurrent requests efficiently
+**Observability**
+- Independent step execution with per-step logging
+- Token usage tracking across all steps
+- Cost metrics aggregated per request
+- Request ID propagation for distributed tracing
 
 **Real-World Impact**
-- Research report that took 2 minutes now takes 15 seconds
-- Data processing job that cost $5 still costs $5, but finishes before your coffee gets cold
-- User experience transforms from "loading..." to "instant"
+- Complex analysis tasks that require multiple reasoning steps
+- Structured outputs enable downstream processing and validation
+- Cost-optimized: Fast Haiku models for all steps, upgrade to Sonnet if needed
+- User experience: Streaming responses maintain perceived responsiveness
 
 ## Use Cases
 
-This architecture excels in domains where tasks can be decomposed into independent, parallelizable units:
+This architecture excels in domains that require sequential multi-step reasoning with structured outputs:
 
 **Research & Analysis**
-- Multi-source research (analyze 10 papers simultaneously)
-- Competitive intelligence (research 5 competitors in parallel)
-- Market analysis (evaluate multiple segments concurrently)
-- Literature reviews (process multiple documents at once)
+- Document analysis (analyze document, extract insights, synthesize summary)
+- Research synthesis (gather information, organize findings, generate report)
+- Competitive intelligence (analyze competitor, assess threat, recommend strategy)
+- Market analysis (evaluate market, identify trends, forecast outcomes)
 
 **Content Generation**
-- Multi-perspective content (generate 5 viewpoints on a topic)
-- A/B testing variations (create multiple copy variations simultaneously)
-- Translation workflows (translate into 10 languages in parallel)
-- Social media campaigns (generate platform-specific content at once)
+- Technical documentation (analyze code, generate docs, format output)
+- Blog posts (analyze topic, generate draft, polish final version)
+- Marketing copy (understand audience, write copy, optimize tone)
+- Email campaigns (analyze recipient, generate message, personalize content)
 
 **Data Processing**
-- Batch document analysis (process 100 contracts simultaneously)
-- Log file analysis (analyze multiple log files in parallel)
-- Data enrichment (enrich multiple records concurrently)
-- Quality assurance (validate multiple data sources at once)
+- Document processing (analyze document, extract entities, validate results)
+- Form analysis (understand requirements, generate response, validate accuracy)
+- Data validation (check quality, identify issues, recommend corrections)
+- Report generation (analyze data, create summary, format output)
 
 **Code & Development**
-- Multi-file code review (review 10 files simultaneously)
-- Test generation (generate tests for multiple modules in parallel)
-- Documentation generation (document multiple APIs concurrently)
-- Dependency analysis (analyze multiple packages at once)
+- Code review (understand changes, identify issues, provide feedback)
+- Documentation generation (analyze code, understand purpose, generate docs)
+- Test generation (understand code, design tests, generate test code)
+- Refactoring guidance (analyze code, identify improvements, recommend changes)
 
 **Decision Support**
-- Multi-criteria evaluation (score options across different criteria in parallel)
-- Risk assessment (evaluate risks from multiple angles simultaneously)
-- Scenario planning (model multiple scenarios concurrently)
-- Option comparison (compare alternatives across dimensions in parallel)
+- Multi-criteria evaluation (understand criteria, score options, rank results)
+- Risk assessment (identify risks, analyze impact, prioritize mitigation)
+- Scenario planning (understand scenario, model outcomes, recommend actions)
+- Option comparison (analyze options, evaluate tradeoffs, recommend choice)
 
 **Ideal Characteristics**
-- Tasks are **independent** (can execute without coordination)
-- Tasks are **I/O-bound** (waiting for API responses, not CPU)
-- Tasks are **parallelizable** (no sequential dependencies)
-- **Speed matters** (user experience or time-to-insight is critical)
-- **Scale varies** (number of tasks changes per request)
+- Tasks **require sequential steps** (step N depends on step N-1 results)
+- Output needs **structure** (type-safe results for downstream processing)
+- Steps have **different concerns** (analysis vs. generation vs. synthesis)
+- **Quality matters** (each step can be optimized independently)
+- **Observability needed** (intermediate outputs for transparency)
 
 **Not Ideal For**
-- Sequential workflows where task N depends on task N-1's results
-- Single, complex tasks that can't be decomposed
-- CPU-bound operations (better suited for multiprocessing)
-- Real-time bidirectional conversations (better suited for single-agent chat)
+- Parallel independent tasks (better suited for orchestrator-worker pattern)
+- Single-turn chat (better suited for single-agent chat)
+- Simple tasks that don't require multiple reasoning steps
+- Real-time bidirectional conversations (better suited for streaming chat)
 
 ## Deployment Options
 
@@ -332,47 +343,58 @@ curl http://localhost:8000/health/
 
 ### Request Timeout Settings
 
-For information on configuring request timeouts, including separate phase-specific controls for worker coordination and synthesis phases, see the **Request Timeout Enforcement** section in [CLAUDE.md](./CLAUDE.md).
+For information on configuring request timeouts, including separate phase-specific controls for each step, see the **Request Timeout Enforcement** section in [CLAUDE.md](./CLAUDE.md).
 
-Key environment variables:
-- `WORKER_COORDINATION_TIMEOUT` - Maximum time for parallel worker execution (default: 45s)
-- `SYNTHESIS_TIMEOUT` - Maximum time for response synthesis (default: 30s)
+Key environment variables (from `ChainConfig`):
+- `ANALYZE_TIMEOUT` - Maximum time for analysis step (default: 15s, range: 1-270s)
+- `PROCESS_TIMEOUT` - Maximum time for processing step (default: 30s, range: 1-270s)
+- `SYNTHESIZE_TIMEOUT` - Maximum time for synthesis step (default: 20s, range: 1-270s)
 
 ## Customization Guide
 
-This is a **generic template** with a simple echo example. To adapt for your use case:
+This is a **generic template** with a simple example workflow. To adapt for your use case:
 
 ### 1. Update System Prompts
 
-Edit `src/orchestrator_worker/prompts/`:
-- `orchestrator_system.md` - Define orchestrator behavior
-- `worker_system.md` - Define worker behavior
-- `synthesizer_system.md` - Define synthesizer behavior
+Edit `src/workflow/prompts/`:
+- `analysis_system.md` - Define analysis step behavior (intent parsing, entity extraction)
+- `processing_system.md` - Define processing step behavior (content generation)
+- `synthesis_system.md` - Define synthesis step behavior (formatting, polishing)
 
-### 2. Customize Models
+### 2. Customize Chain Models
 
-Edit `src/orchestrator_worker/models/internal.py`:
-- Replace `TaskRequest` and `TaskResult` with your domain models
-- Add domain-specific validation and business logic
+Edit `src/workflow/models/chains.py`:
+- Extend `AnalysisOutput` with domain-specific analysis fields
+- Extend `ProcessOutput` with domain-specific content fields
+- Extend `SynthesisOutput` with domain-specific formatting fields
+- Customize `ChainConfig` with additional workflow parameters
 
-### 3. Implement Agents
+### 3. Customize Internal Models
 
-Edit `src/orchestrator_worker/agents/`:
-- `orchestrator.py` - Customize `_determine_task_count()` and coordination logic
-- `worker.py` - Customize `process_task()` for your use case
-- `synthesizer.py` - Customize `process_task()` for your use case
+Edit `src/workflow/models/internal.py`:
+- Add domain-specific models and validation
+- Define custom data structures for your workflow
 
-### 4. Update Configuration
+### 4. Implement Agents
 
-Edit `.env` and `src/orchestrator_worker/config.py`:
-- Model IDs, token limits, temperatures
-- API settings, logging, streaming config
+Edit `src/workflow/agents/`:
+- `analysis.py` - Customize intent parsing and entity extraction for your domain
+- `processing.py` - Implement domain-specific content generation
+- `synthesis.py` - Customize formatting and polishing logic
+
+### 5. Update Configuration
+
+Edit `.env` and `src/workflow/config.py`:
+- Per-step model IDs (upgrade to Sonnet if needed for complex reasoning)
+- Per-step token limits and temperature
+- Timeout configuration per phase
+- Enable/disable validation gates between steps
 
 ## Project Structure
 
 ```
 agentic-service-template/
-├── src/orchestrator_worker/
+├── src/workflow/
 │   ├── agents/           # Orchestrator and Worker agents
 │   ├── api/             # FastAPI endpoints
 │   ├── models/          # Data models (OpenAI + internal)

@@ -18,14 +18,14 @@ from anthropic import (
     RateLimitError,
 )
 
-from orchestrator_worker.config import Settings
-from orchestrator_worker.utils.anthropic_errors import map_anthropic_exception
-from orchestrator_worker.utils.circuit_breaker import (
+from workflow.config import Settings
+from workflow.utils.anthropic_errors import map_anthropic_exception
+from workflow.utils.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerState,
     create_retryable_anthropic_call,
 )
-from orchestrator_worker.utils.errors import (
+from workflow.utils.errors import (
     AnthropicConnectionError,
     AnthropicRateLimitError,
     AnthropicServerError,
@@ -601,7 +601,7 @@ class TestLoggingCallbacks:
             ]
         )
 
-        with patch("orchestrator_worker.utils.circuit_breaker.logger") as mock_logger:
+        with patch("workflow.utils.circuit_breaker.logger") as mock_logger:
             decorator = create_retryable_anthropic_call(settings)
             wrapped = decorator(mock_func)
 
@@ -613,7 +613,7 @@ class TestLoggingCallbacks:
     @pytest.mark.asyncio
     async def test_circuit_breaker_logs_state_changes(self):
         """Test circuit breaker logs state transitions."""
-        with patch("orchestrator_worker.utils.circuit_breaker.logger") as mock_logger:
+        with patch("workflow.utils.circuit_breaker.logger") as mock_logger:
             cb = CircuitBreaker(service_name="test", failure_threshold=2)
 
             # Should log initialization

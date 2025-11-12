@@ -6,13 +6,13 @@ Tests the token usage calculation, cost estimation, and aggregation functions.
 
 import pytest
 
-from orchestrator_worker.models.internal import (
+from workflow.models.internal import (
     AggregatedTokenMetrics,
     CostMetrics,
     TaskResult,
     TokenUsage,
 )
-from orchestrator_worker.utils.token_tracking import (
+from workflow.utils.token_tracking import (
     aggregate_token_metrics,
     calculate_cost,
     get_model_pricing,
@@ -416,7 +416,7 @@ class TestRealisticScenarios:
         # Should still be relatively cheap with Haiku
         assert total_cost < 0.05
 
-    def test_orchestrator_worker_synthesizer_flow(self):
+    def test_workflow_synthesizer_flow(self):
         """Test typical orchestrator-worker-synthesizer token flow."""
         # Orchestrator planning
         orchestrator_usage = calculate_cost(

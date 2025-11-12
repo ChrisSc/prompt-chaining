@@ -79,7 +79,7 @@ services:
 # Example development workflow:
 #   1. Uncomment volumes section above
 #   2. Run: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
-#   3. Edit src/orchestrator_worker files
+#   3. Edit src/workflow files
 #   4. Changes automatically reload (if using uvicorn with --reload)
 #   5. View logs with: docker-compose logs -f
 #   6. Test with: ./scripts/docker-test.sh

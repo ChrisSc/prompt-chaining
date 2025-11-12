@@ -281,9 +281,7 @@ class TestDockerRequestValidation:
         return None
 
     @pytest.mark.asyncio
-    async def test_missing_model_field(
-        self, container_url: str, bearer_token: str | None
-    ) -> None:
+    async def test_missing_model_field(self, container_url: str, bearer_token: str | None) -> None:
         """Test that missing model field is validated."""
         if not bearer_token:
             pytest.skip("Could not generate bearer token")
