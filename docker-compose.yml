@@ -1,0 +1,83 @@
+services:
+  orchestrator-worker:
+    # Build configuration
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    # Image configuration
+    image: orchestrator-worker:latest
+    container_name: orchestrator-worker-api
+
+    # Port mapping
+    ports:
+      - "8000:8000"
+
+    # Environment configuration
+    # Load configuration from .env file - REQUIRED for ANTHROPIC_API_KEY and JWT_SECRET_KEY
+    env_file:
+      - .env
+
+    # Override or add environment variables
+    environment:
+      # API server binding - 0.0.0.0 allows external connections
+      API_HOST: 0.0.0.0
+      # API_PORT is read from .env file (default: 8000)
+      # Uncomment below to override .env value:
+      # API_PORT: 8001
+      # Optional: Ensure JSON logging format in container
+      # LOG_FORMAT: json
+
+    # Restart policy - restart unless explicitly stopped
+    restart: unless-stopped
+
+    # Health check (matches Dockerfile healthcheck)
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+
+    # Network configuration
+    networks:
+      - orchestrator-network
+
+    # Optional: Resource limits (uncomment and adjust for production)
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: "1"
+    #       memory: 512M
+    #     reservations:
+    #       cpus: "0.5"
+    #       memory: 256M
+
+    # Optional: Volume mounts for development/debugging (uncomment for development)
+    # volumes:
+    #   # Bind mount source code for development (requires rebuild when switching between dev/prod)
+    #   - ./src:/app/src
+    #   # Bind mount logs directory (ensure logs directory exists locally)
+    #   - ./logs:/app/logs
+    #   # Bind mount .env for development
+    #   - ./.env:/app/.env:ro
+
+networks:
+  orchestrator-network:
+    driver: bridge
+
+# Usage:
+# Standard production build and run:
+#   docker-compose up -d
+#
+# With development overrides for hot-reload:
+#   docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# View logs:
+#   docker-compose logs -f orchestrator-worker
+#
+# Stop containers:
+#   docker-compose down
+#
+# Rebuild image:
+#   docker-compose build --no-cache

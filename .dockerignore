@@ -1,0 +1,100 @@
+# Virtual environments - exclude all venv directories
+.venv/
+venv/
+ENV/
+env/
+
+# Testing artifacts
+tests/
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+*.cover
+
+# Git
+.git/
+.github/
+.gitignore
+
+# Python artifacts
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environment files - NEVER copy secrets or .env files
+.env
+.env.dev
+.env.test
+.env.local
+.env.*.local
+
+# Documentation (but preserve prompt files in src/)
+*.md
+# Exemption handled at docker build time for src/orchestrator_worker/prompts/
+
+# IDE and editor files
+.vscode/
+.idea/
+.code/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Node modules (if applicable)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Temporary files
+*.tmp
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# OS specific
+.DS_Store
+Thumbs.db
+*.bak
+
+# Dependencies cache
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Optional virtualenv directory
+.Python
+
+# Distribution / packaging
+.Python
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# Docker files during build (prevent recursion)
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Development scripts (not needed in production)
+scripts/dev.sh
+scripts/format.sh
+scripts/test.sh
+scripts/docker-test.sh
+
+# Miscellaneous
+.editorconfig
+.pre-commit-config.yaml
+CHANGELOG.md
+LICENSE

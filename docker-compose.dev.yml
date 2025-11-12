@@ -1,0 +1,85 @@
+# Development overrides for docker-compose.yml
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# This file provides development-specific configuration that overrides the
+# production settings in docker-compose.yml. It enables fast iteration with
+# source code hot-reload and DEBUG logging.
+
+services:
+  orchestrator-worker:
+    # Override environment for development
+    environment:
+      # Enable debug logging for development
+      LOG_LEVEL: DEBUG
+      # Keep API accessible from host
+      API_HOST: 0.0.0.0
+      # API_PORT is read from .env file (default: 8000)
+      # Uncomment below to override .env value:
+      # API_PORT: 8001
+
+    # Optional: Bind mount source code for live code reloading during development
+    # IMPORTANT: This requires the source code to be mounted as a volume
+    # When you make changes to Python files, the service will automatically reload
+    # if using fastapi dev or uvicorn --reload
+    # volumes:
+    #   # Mount src directory for hot reload (read-write)
+    #   - ./src:/app/src
+    #   # Mount scripts for utilities
+    #   - ./scripts:/app/scripts:ro
+    #   # Mount .env for development configuration
+    #   - ./.env:/app/.env:ro
+    #   # Mount logs directory (ensure ./logs exists locally)
+    #   - ./logs:/app/logs
+
+    # Optional: Reduced resource limits for development (useful on resource-constrained machines)
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: "0.5"
+    #       memory: 256M
+    #     reservations:
+    #       cpus: "0.25"
+    #       memory: 128M
+
+    # Optional: Override restart policy for development (don't restart on crash for debugging)
+    # restart: "no"
+
+# Development Notes:
+#
+# 1. WHEN TO USE HOT-RELOAD (volume mounts):
+#    - Rapid iteration on application logic
+#    - Testing configuration changes in environment
+#    - Debugging with LOG_LEVEL=DEBUG
+#    - Only Python source code changes auto-reload
+#
+# 2. WHEN TO REBUILD INSTEAD:
+#    - Changes to dependencies (pyproject.toml)
+#    - Changes to Dockerfile
+#    - Changes to system packages
+#    - Adding new Python packages
+#    Rebuild with: docker-compose build --no-cache
+#
+# 3. HOT-RELOAD LIMITATIONS:
+#    - Dockerfile changes require rebuild
+#    - pyproject.toml changes require rebuild
+#    - New package installs require rebuild
+#    - Module imports may need container restart
+#
+# 4. TESTING WITH DEVELOPMENT COMPOSE:
+#    Start: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+#    Logs:  docker-compose logs -f orchestrator-worker
+#    Test:  ./scripts/docker-test.sh (from host machine)
+#    Stop:  docker-compose down
+#
+# 5. SWITCHING BETWEEN PROD/DEV:
+#    Prod only: docker-compose up -d
+#    Dev mode:  docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+#    Always: docker-compose down (switches safely)
+#
+# Example development workflow:
+#   1. Uncomment volumes section above
+#   2. Run: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+#   3. Edit src/orchestrator_worker files
+#   4. Changes automatically reload (if using uvicorn with --reload)
+#   5. View logs with: docker-compose logs -f
+#   6. Test with: ./scripts/docker-test.sh

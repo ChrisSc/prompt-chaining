@@ -1,0 +1,112 @@
+name: Feature Request
+description: Suggest a new feature or enhancement for the template
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature! Please note that this is a **template project** meant to remain generic and customizable.
+
+        **Before submitting:**
+        - For domain-specific features, consider implementing them in your fork
+        - Template improvements should benefit multiple use cases
+        - See [CONTRIBUTING.md](https://github.com/ChrisSc/agentic-orchestrator-worker-template/blob/main/CONTRIBUTING.md#customization-vs-template-improvements) for guidance
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem does this feature solve? What use case does it address?
+      placeholder: |
+        I'm trying to... but I can't because...
+        This would help with...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the feature or enhancement you'd like to see
+      placeholder: |
+        I would like to see...
+        This could work by...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: What alternative solutions or workarounds have you considered?
+      placeholder: |
+        I considered...
+        Another approach could be...
+
+  - type: textarea
+    id: benefits
+    attributes:
+      label: Benefits
+      description: How would this feature benefit the template and its users?
+      placeholder: |
+        This would:
+        - Make it easier to...
+        - Improve performance by...
+        - Enable developers to...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Feature Scope
+      description: Is this a template improvement or a domain-specific customization?
+      options:
+        - Template improvement (benefits all use cases)
+        - Domain-specific (should be implemented in fork)
+        - Not sure (needs discussion)
+    validations:
+      required: true
+
+  - type: textarea
+    id: breaking
+    attributes:
+      label: Breaking Changes
+      description: Would this feature introduce breaking changes to existing users?
+      placeholder: |
+        Yes/No
+        If yes, describe the impact and potential migration path...
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Implementation Ideas
+      description: Do you have ideas about how this could be implemented?
+      placeholder: |
+        This could be implemented by...
+        Relevant files to modify:...
+        Technical considerations:...
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      description: Are you willing to contribute this feature?
+      options:
+        - label: I am willing to submit a PR for this feature
+        - label: I need help implementing this feature
+        - label: I'm just suggesting an idea
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      description: Please confirm the following before submitting
+      options:
+        - label: I have searched existing issues and discussions to ensure this is not a duplicate
+          required: true
+        - label: I have reviewed the [Customization Guide](https://github.com/ChrisSc/agentic-orchestrator-worker-template/blob/main/CLAUDE.md#customization-guide) to confirm this should be a template feature
+          required: true
+        - label: This feature would benefit multiple use cases, not just my specific project
+          required: true

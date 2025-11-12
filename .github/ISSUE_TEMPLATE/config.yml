@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: GitHub Discussions
+    url: https://github.com/ChrisSc/agentic-orchestrator-worker-template/discussions
+    about: Ask questions and discuss ideas with the community
+  - name: Documentation
+    url: https://github.com/ChrisSc/agentic-orchestrator-worker-template/blob/main/CLAUDE.md
+    about: Read the comprehensive development and architecture documentation

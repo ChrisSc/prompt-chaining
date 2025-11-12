@@ -1,0 +1,111 @@
+name: Documentation Improvement
+description: Suggest improvements to documentation, examples, or guides
+title: "[Docs]: "
+labels: ["documentation", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve our documentation! Clear, comprehensive docs make this template easier to use for everyone.
+
+  - type: dropdown
+    id: doc-type
+    attributes:
+      label: Documentation Type
+      description: What type of documentation needs improvement?
+      options:
+        - README.md
+        - CLAUDE.md (development guide)
+        - CONTRIBUTING.md
+        - JWT_AUTHENTICATION.md
+        - Code comments/docstrings
+        - API documentation
+        - Examples
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: issue
+    attributes:
+      label: Current Issue
+      description: What's unclear, missing, or incorrect in the current documentation?
+      placeholder: |
+        The current documentation says... but it's unclear because...
+        The section on... is missing information about...
+        The example for... doesn't work because...
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested Improvement
+      description: How would you improve this documentation?
+      placeholder: |
+        It would be clearer if...
+        We should add a section explaining...
+        The example should include...
+    validations:
+      required: true
+
+  - type: input
+    id: location
+    attributes:
+      label: File/Section Location
+      description: Which file and section needs improvement?
+      placeholder: "CLAUDE.md - Architecture Overview section, lines 50-75"
+
+  - type: textarea
+    id: context
+    attributes:
+      label: User Context
+      description: Who would benefit from this improvement? What scenario prompted this suggestion?
+      placeholder: |
+        As a new contributor trying to...
+        When setting up the development environment...
+        While customizing the template for...
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Impact Level
+      description: How does this documentation issue affect users?
+      options:
+        - Critical (blocks usage or causes errors)
+        - High (causes significant confusion)
+        - Medium (could be clearer)
+        - Low (minor improvement)
+    validations:
+      required: true
+
+  - type: textarea
+    id: draft
+    attributes:
+      label: Draft Improvement (Optional)
+      description: If you have a draft of the improved documentation, paste it here
+      placeholder: |
+        ```markdown
+        Your improved documentation text...
+        ```
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      description: Are you willing to contribute this improvement?
+      options:
+        - label: I am willing to submit a PR with this documentation improvement
+        - label: I need help writing the documentation
+        - label: I'm just pointing out an issue
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      description: Please confirm the following before submitting
+      options:
+        - label: I have searched existing issues to ensure this is not a duplicate
+          required: true
+        - label: I have reviewed the current documentation to confirm the issue exists
+          required: true

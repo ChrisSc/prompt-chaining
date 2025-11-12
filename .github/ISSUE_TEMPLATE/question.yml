@@ -1,0 +1,91 @@
+name: Question or Help
+description: Ask a question or get help with using the template
+title: "[Question]: "
+labels: ["question", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have a question about using the template? We're here to help!
+
+        **Note:** For general discussions or broader topics, consider using [GitHub Discussions](https://github.com/ChrisSc/agentic-orchestrator-worker-template/discussions) instead.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your Question
+      description: What would you like to know?
+      placeholder: How do I...? What's the best way to...? Why does...?
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What are you trying to accomplish? What have you tried so far?
+      placeholder: |
+        I'm trying to...
+        I've attempted...
+        I've read... but I'm still unclear about...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Question Category
+      description: What aspect of the template is your question about?
+      options:
+        - Setup and installation
+        - Development workflow
+        - Multi-agent architecture
+        - Customization and extension
+        - Testing
+        - Authentication (JWT)
+        - Deployment
+        - Performance optimization
+        - API usage
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: code
+    attributes:
+      label: Relevant Code (Optional)
+      description: If applicable, share relevant code snippets or configuration
+      render: python
+      placeholder: |
+        # Your code here
+
+  - type: textarea
+    id: error
+    attributes:
+      label: Error Messages (If Applicable)
+      description: If you're encountering an error, paste the error message
+      render: shell
+      placeholder: Paste error messages here...
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment (If Relevant)
+      description: Your environment details, if relevant to the question
+      placeholder: |
+        - Python version:
+        - Operating system:
+        - Installation method:
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      description: Please confirm you've checked these resources first
+      options:
+        - label: I have read the [CLAUDE.md](https://github.com/ChrisSc/agentic-orchestrator-worker-template/blob/main/CLAUDE.md) documentation
+          required: true
+        - label: I have checked the [Common Issues](https://github.com/ChrisSc/agentic-orchestrator-worker-template/blob/main/CONTRIBUTING.md#common-issues--troubleshooting) section
+          required: true
+        - label: I have searched existing issues and discussions
+          required: true

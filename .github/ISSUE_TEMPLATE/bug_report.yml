@@ -1,0 +1,105 @@
+name: Bug Report
+description: Report a bug or issue with the template
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the form below with as much detail as possible.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of what the bug is.
+      placeholder: Tell us what went wrong...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. Run command '...'
+        2. Navigate to '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen
+      placeholder: Tell us what should have happened...
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened
+      placeholder: Tell us what actually happened...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and Error Messages
+      description: Relevant logs, error messages, or stack traces
+      render: shell
+      placeholder: Paste any relevant logs or error messages here...
+
+  - type: input
+    id: python-version
+    attributes:
+      label: Python Version
+      description: What version of Python are you using?
+      placeholder: "3.10, 3.11, 3.12, etc."
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      description: What operating system are you using?
+      placeholder: "macOS 14.0, Ubuntu 22.04, Windows 11, etc."
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment Details
+      description: Any other relevant environment information
+      placeholder: |
+        - FastAPI version:
+        - Anthropic SDK version:
+        - Virtual environment: (yes/no)
+        - Installation method: (pip install -e ".[dev]" / other)
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Add any other context about the problem here
+      placeholder: Screenshots, related issues, attempted fixes, etc.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      description: Please confirm the following before submitting
+      options:
+        - label: I have searched existing issues to ensure this is not a duplicate
+          required: true
+        - label: I have reviewed the [CLAUDE.md](https://github.com/ChrisSc/agentic-orchestrator-worker-template/blob/main/CLAUDE.md) documentation
+          required: true
+        - label: I have checked the [Common Issues](https://github.com/ChrisSc/agentic-orchestrator-worker-template/blob/main/CONTRIBUTING.md#common-issues--troubleshooting) section
+          required: true

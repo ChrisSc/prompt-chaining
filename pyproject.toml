@@ -1,0 +1,80 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orchestrator-worker"
+version = "0.3.4"
+description = "Multi-agent orchestration platform with OpenAI-compatible API"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "python-dotenv>=1.0.0",
+    "anthropic>=0.42.0",
+    "httpx>=0.25.0",
+    "python-logging-loki>=0.3.0",
+    "PyJWT>=2.8.0",
+    "slowapi>=0.1.9",
+    "tenacity>=8.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.7.0",
+    "httpx>=0.25.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+orchestrator_worker = ["prompts/*.md"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312", "py313"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "PIE", "PT", "RET", "SIM", "PERF"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+strict_optional = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "--cov=src/orchestrator_worker --cov-report=html --cov-report=term"
+markers = [
+    "integration: integration tests that require live services",
+    "docker: tests that require Docker container running",
+]
+
+[tool.coverage.run]
+source = ["src/orchestrator_worker"]
+omit = ["*/tests/*", "*/site-packages/*"]
