@@ -50,6 +50,8 @@ class ServiceRequest(BaseModel):
 
 
 # Multi-agent coordination models
+# Legacy domain models from orchestrator-worker pattern.
+# These serve as examples for users customizing their own models.
 
 
 class TokenUsage(BaseModel):
@@ -116,7 +118,10 @@ class AggregatedTokenMetrics(BaseModel):
 
 class TaskRequest(BaseModel):
     """
-    Request from Orchestrator to a Worker instance for a specific task.
+    Example model - customize for your domain.
+
+    Legacy model from orchestrator-worker pattern that shows how to structure
+    requests between coordinating agents. Customize for your specific use case.
 
     The Orchestrator creates TaskRequests and sends them to Worker instances,
     which respond with TaskResults.
@@ -136,7 +141,10 @@ class TaskRequest(BaseModel):
 
 class TaskResult(BaseModel):
     """
-    Result from a Worker instance back to the Orchestrator.
+    Example model - customize for your domain.
+
+    Legacy model from orchestrator-worker pattern that shows how to structure
+    results returned from worker agents. Customize for your specific use case.
 
     Contains the output from executing a single task.
     """
@@ -157,7 +165,10 @@ class TaskResult(BaseModel):
 
 class AggregatedResult(BaseModel):
     """
-    Aggregated results from multiple workers, assembled by the Orchestrator.
+    Example model - customize for your domain.
+
+    Legacy model from orchestrator-worker pattern that shows how to aggregate
+    results from multiple workers. Customize for your specific use case.
 
     The Orchestrator collects TaskResults from all workers and combines them
     into a final response.

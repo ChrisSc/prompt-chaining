@@ -301,9 +301,9 @@ docker-compose exec orchestrator-worker env | sort
 # API_HOST=0.0.0.0
 # API_PORT=8000
 # LOG_LEVEL=INFO
-# ORCHESTRATOR_MODEL=claude-sonnet-4-5-20250929
-# WORKER_MODEL=claude-haiku-4-5-20251001
-# SYNTHESIZER_MODEL=claude-haiku-4-5-20251001
+# CHAIN_ANALYZE_MODEL=claude-haiku-4-5-20251001
+# CHAIN_PROCESS_MODEL=claude-haiku-4-5-20251001
+# CHAIN_SYNTHESIZE_MODEL=claude-haiku-4-5-20251001
 # PYTHONUNBUFFERED=1
 # PYTHONDONTWRITEBYTECODE=1
 # PATH=/opt/venv/bin:... (includes venv)

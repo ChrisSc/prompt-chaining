@@ -20,7 +20,7 @@ WORKDIR /tmp
 # The cache mount reduces build time on subsequent rebuilds
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir .
+    pip install --no-cache-dir ".[dev]"
 
 # Stage 2: Production - minimal runtime image
 FROM python:3.12-slim
@@ -45,11 +45,17 @@ ENV PATH="/opt/venv/bin:$PATH" \
 WORKDIR /app
 
 # Copy application code with proper ownership
+# Copy project metadata
+COPY --chown=appuser:appuser pyproject.toml /app/
+
 # Copy main application package
 COPY --chown=appuser:appuser src/workflow /app/src/workflow
 
 # Copy scripts directory for utilities like generate_jwt.py
 COPY --chown=appuser:appuser scripts /app/scripts
+
+# Copy tests directory for test execution
+COPY --chown=appuser:appuser tests /app/tests
 
 # Create necessary directories with proper permissions
 RUN mkdir -p /app/logs && chown -R appuser:appuser /app

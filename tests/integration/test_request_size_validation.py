@@ -6,17 +6,11 @@ including error handling, status codes, response formats, and edge cases.
 """
 
 import os
-from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from workflow.main import create_app
-from workflow.models.openai import (
-    ChatCompletionChunk,
-    ChatCompletionStreamChoice,
-    ChoiceDelta,
-)
 
 # Use a consistent secret key for all tests
 TEST_JWT_SECRET = "test_secret_key_with_minimum_32_characters_required_for_testing"
@@ -55,65 +49,22 @@ def valid_jwt_token() -> str:
 
 
 @pytest.fixture
-def app_with_mocked_orchestrator():
-    """Create FastAPI app with mocked orchestrator."""
-    with patch("workflow.main.Orchestrator") as mock_orchestrator_class:
-        mock_orchestrator = AsyncMock()
-        mock_orchestrator.model = "claude-sonnet-4-5-20250929"
-        mock_orchestrator.client = True  # Mark as initialized
-        mock_orchestrator_class.return_value = mock_orchestrator
-
-        app = create_app()
-        app.state.orchestrator = mock_orchestrator
-
-    return app
+def app():
+    """Create FastAPI app for testing."""
+    return create_app()
 
 
 @pytest.fixture
-def client(app_with_mocked_orchestrator) -> TestClient:
+def client(app) -> TestClient:
     """Create test client from app."""
-    return TestClient(app_with_mocked_orchestrator)
-
-
-@pytest.fixture
-def mock_orchestrator_streaming_response(app_with_mocked_orchestrator):
-    """Setup orchestrator to return streaming response."""
-
-    async def mock_process(request):
-        yield ChatCompletionChunk(
-            id="test-1",
-            created=0,
-            model="test",
-            choices=[
-                ChatCompletionStreamChoice(
-                    index=0,
-                    delta=ChoiceDelta(role="assistant", content="Hello"),
-                    finish_reason=None,
-                )
-            ],
-        )
-        yield ChatCompletionChunk(
-            id="test-2",
-            created=0,
-            model="test",
-            choices=[
-                ChatCompletionStreamChoice(
-                    index=0,
-                    delta=ChoiceDelta(),
-                    finish_reason="stop",
-                )
-            ],
-        )
-
-    app_with_mocked_orchestrator.state.orchestrator.process = mock_process
-    return app_with_mocked_orchestrator
+    return TestClient(app)
 
 
 class TestChatEndpointRequestSizeAcceptance:
     """Test chat endpoint acceptance of appropriately-sized requests."""
 
     def test_chat_endpoint_accepts_small_request(
-        self, mock_orchestrator_streaming_response, client: TestClient, valid_jwt_token: str
+        self, client: TestClient, valid_jwt_token: str
     ) -> None:
         """Test that small valid request succeeds."""
         request_body = {
@@ -131,7 +82,7 @@ class TestChatEndpointRequestSizeAcceptance:
         assert "text/event-stream" in response.headers.get("content-type", "")
 
     def test_chat_endpoint_accepts_medium_sized_request(
-        self, mock_orchestrator_streaming_response, client: TestClient, valid_jwt_token: str
+        self, client: TestClient, valid_jwt_token: str
     ) -> None:
         """Test that medium-sized request is accepted."""
         # Create a request with ~500KB of content
@@ -150,7 +101,7 @@ class TestChatEndpointRequestSizeAcceptance:
         assert response.status_code == 200
 
     def test_chat_endpoint_accepts_request_at_limit(
-        self, mock_orchestrator_streaming_response, client: TestClient, valid_jwt_token: str
+        self, client: TestClient, valid_jwt_token: str
     ) -> None:
         """Test that request exactly at 1MB limit is accepted."""
         # Create request just under 1MB (accounting for JSON overhead)
@@ -320,7 +271,7 @@ class TestRequestSizeEdgeCases:
     """Test edge cases for request size validation."""
 
     def test_request_exactly_at_limit_accepted(
-        self, mock_orchestrator_streaming_response, client: TestClient, valid_jwt_token: str
+        self, client: TestClient, valid_jwt_token: str
     ) -> None:
         """Test that request exactly at 1MB limit is accepted."""
         # Create a request that's exactly at the limit
@@ -357,7 +308,7 @@ class TestRequestSizeEdgeCases:
         assert response.status_code == 413
 
     def test_multiple_requests_both_small(
-        self, mock_orchestrator_streaming_response, client: TestClient, valid_jwt_token: str
+        self, client: TestClient, valid_jwt_token: str
     ) -> None:
         """Test that multiple small requests all succeed."""
         request_body = {
@@ -414,7 +365,7 @@ class TestServerRecoveryAfterRejection:
     """Test that server recovers properly after request rejection."""
 
     def test_server_accepts_valid_after_rejection(
-        self, mock_orchestrator_streaming_response, client: TestClient, valid_jwt_token: str
+        self, client: TestClient, valid_jwt_token: str
     ) -> None:
         """Test that server accepts valid request after rejecting oversized one."""
         # First, send oversized request
@@ -445,7 +396,7 @@ class TestServerRecoveryAfterRejection:
         assert response.status_code == 200
 
     def test_multiple_rejections_and_acceptances(
-        self, mock_orchestrator_streaming_response, client: TestClient, valid_jwt_token: str
+        self, client: TestClient, valid_jwt_token: str
     ) -> None:
         """Test server handles alternating rejections and acceptances."""
         headers = {"Authorization": f"Bearer {valid_jwt_token}"}

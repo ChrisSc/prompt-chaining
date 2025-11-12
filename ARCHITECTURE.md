@@ -2,6 +2,127 @@
 
 This document describes the technical architecture of the Prompt-Chaining Workflow Template.
 
+## Visual Architecture
+
+The prompt-chaining pattern uses **LangGraph StateGraph** to orchestrate three sequential steps that process user requests through distinct phases. Each step operates independently with its own Claude model, configuration, and validation gates between steps. Structured state management via Pydantic models ensures reliable data flow and enables comprehensive observability. Validation gates enforce quality boundaries between steps, preventing low-quality outputs from corrupting downstream processing.
+
+### LangGraph State Machine
+
+The workflow is orchestrated as a directed graph with nodes representing processing steps and conditional edges representing validation gates:
+
+```mermaid
+graph TD
+    START([START]) --> analyze[analyze_step]
+    analyze --> should_proc_1{should_proceed_to_process?}
+    should_proc_1 -->|valid intent| process[process_step]
+    should_proc_1 -->|invalid| error[error_step]
+    process --> should_proc_2{should_proceed_to_synthesize?}
+    should_proc_2 -->|confidence >= 0.5| synthesize[synthesize_step]
+    should_proc_2 -->|low confidence| error
+    synthesize --> END([END])
+    error --> END
+
+    style START fill:#90EE90
+    style END fill:#FFB6C6
+    style error fill:#FFB347
+    style analyze fill:#87CEEB
+    style process fill:#87CEEB
+    style synthesize fill:#87CEEB
+```
+
+This state machine diagram shows the complete execution flow: requests enter at START, flow sequentially through analyze, process, and synthesize steps, with validation gates routing invalid outputs to the error handler. Both success and error paths terminate at END, where responses are streamed to the client.
+
+### Chain Flow with Validation Gates
+
+The chain flow diagram shows how data moves through the workflow with validation gates enforcing quality boundaries:
+
+```mermaid
+graph LR
+    input["User Message Input"] --> analyze["Analyze Step<br/>Extract Intent & Entities"]
+    analyze --> analysis["Analysis Output<br/>intent, entities, complexity"]
+    analysis --> gate1["Validation Gate 1<br/>intent non-empty?"]
+    gate1 -->|PASS| process["Process Step<br/>Generate Content"]
+    gate1 -->|FAIL| error["Error Handler<br/>Return Error"]
+    process --> process_out["Process Output<br/>content, confidence"]
+    process_out --> gate2["Validation Gate 2<br/>confidence >= 0.5?"]
+    gate2 -->|PASS| synthesize["Synthesize Step<br/>Polish & Format"]
+    gate2 -->|FAIL| error
+    synthesize --> final["Final Response<br/>Streamed to Client"]
+    error --> final
+
+    style input fill:#E8F4F8
+    style analysis fill:#D4E8F0
+    style process_out fill:#D4E8F0
+    style final fill:#C0D9E8
+    style gate1 fill:#FFE4B5
+    style gate2 fill:#FFE4B5
+    style error fill:#FFB347
+    style analyze fill:#87CEEB
+    style process fill:#87CEEB
+    style synthesize fill:#87CEEB
+```
+
+Validation gates control workflow progression: Gate 1 (after analyze) checks that intent is present and non-empty, preventing vague requests from corrupting the processing step. Gate 2 (after process) checks both that content is non-empty and confidence >= 0.5, ensuring only high-quality generated content reaches the synthesis step. Both gates can route to the error handler, enabling fail-fast behavior on quality issues.
+
+### ChainState Evolution Through Steps
+
+The state evolves as each step completes, accumulating outputs and metadata:
+
+```
+INITIAL STATE (at START):
+├─ messages: [HumanMessage("What's the capital of France?")]
+├─ analysis: None
+├─ processed_content: None
+├─ final_response: None
+└─ step_metadata: {}
+
+AFTER ANALYZE STEP:
+├─ messages: [HumanMessage(...), AIMessage(analysis_json)]
+├─ analysis: {
+│   ├─ intent: "Find the capital of France"
+│   ├─ key_entities: ["France", "capital"]
+│   ├─ complexity: "simple"
+│   └─ context: {}
+│   }
+├─ processed_content: None
+├─ final_response: None
+└─ step_metadata: {
+    └─ analyze: {tokens: 241, cost: $0.00096, elapsed: 1.23s}
+    }
+
+AFTER PROCESS STEP:
+├─ messages: [HumanMessage(...), AIMessage(analysis), AIMessage(process_json)]
+├─ analysis: {...}  (unchanged)
+├─ processed_content: {
+│   ├─ content: "The capital of France is Paris..."
+│   ├─ confidence: 0.95
+│   └─ metadata: {source: "geographic_knowledge"}
+│   }
+├─ final_response: None
+└─ step_metadata: {
+    ├─ analyze: {...}
+    └─ process: {tokens: 699, cost: $0.00356, confidence: 0.95, elapsed: 2.45s}
+    }
+
+AFTER SYNTHESIZE STEP (FINAL):
+├─ messages: [HumanMessage(...), AIMessage(...), AIMessage(...), AIMessage(synthesize_json)]
+├─ analysis: {...}
+├─ processed_content: {...}
+├─ final_response: "# Capitals of France\n\nThe capital of France..."
+└─ step_metadata: {
+    ├─ analyze: {...}
+    ├─ process: {...}
+    └─ synthesize: {tokens: 888, cost: $0.00289, formatting: markdown, elapsed: 1.89s}
+    }
+
+TOTAL AGGREGATION:
+├─ Total Tokens: 1,828
+├─ Total Cost: $0.00741
+└─ Total Time: 5.57 seconds
+```
+
+The state demonstrates message accumulation via the `add_messages` reducer (enabling future multi-turn conversations), progressive population of step output fields, and metadata tracking across all processing phases. Each step's metrics (tokens, cost, elapsed time) accumulate in `step_metadata` for complete workflow visibility.
+
 ## Core Design Pattern: Prompt-Chaining
 
 The system implements a production-grade prompt-chaining pattern for sequential multi-step AI workflows using LangGraph's StateGraph.
@@ -916,6 +1037,112 @@ Logs will show:
 Anthropic API sees: `X-Request-ID: req_client_123` in request headers
 
 This enables end-to-end correlation across all systems.
+
+## Performance Monitoring
+
+### Metrics Collection Architecture
+
+The prompt-chaining workflow automatically collects comprehensive performance metrics across all three processing steps, enabling cost monitoring, performance optimization, and SLA validation.
+
+**Metrics Collected Per Step**:
+- **Input/Output Tokens**: Tracked from LLM API responses for cost calculation
+- **Cost in USD**: Calculated using model-specific pricing (Haiku: $1/$5 per 1M tokens, Sonnet: $3/$15 per 1M tokens)
+- **Elapsed Time**: Step execution duration in seconds for latency monitoring
+- **Confidence Score** (Process step only): Quality metric for generated content
+- **Content/Output Length**: Character count of step outputs for capacity planning
+
+**Aggregation Flow**:
+1. Each step extracts `usage_metadata` from LLM response
+2. Cost calculated for step using `calculate_cost(model, input_tokens, output_tokens)`
+3. Metrics stored in `ChainState.step_metadata[step_name]`
+4. API endpoint aggregates all steps and logs total metrics
+
+**Example Aggregated Metrics Log Entry**:
+```json
+{
+  "timestamp": "2025-11-12T17:00:00.000Z",
+  "level": "INFO",
+  "logger": "workflow.api.v1.chat",
+  "message": "Chat completion request completed",
+  "request_id": "req_1731424800123",
+  "model": "orchestrator-worker",
+  "status": "success",
+  "total_elapsed_seconds": 4.8,
+  "aggregated_step_elapsed_seconds": 4.8,
+  "total_tokens": 1250,
+  "total_cost_usd": 0.00485,
+  "step_breakdown": {
+    "analyze": {
+      "model": "claude-haiku-4-5-20251001",
+      "elapsed_seconds": 1.2,
+      "input_tokens": 300,
+      "output_tokens": 150,
+      "total_tokens": 450,
+      "cost_usd": 0.00100
+    },
+    "process": {
+      "model": "claude-haiku-4-5-20251001",
+      "elapsed_seconds": 2.1,
+      "input_tokens": 400,
+      "output_tokens": 400,
+      "total_tokens": 800,
+      "cost_usd": 0.00240,
+      "confidence_score": 0.87
+    },
+    "synthesize": {
+      "model": "claude-haiku-4-5-20251001",
+      "elapsed_seconds": 1.5,
+      "input_tokens": 500,
+      "output_tokens": 400,
+      "total_tokens": 900,
+      "cost_usd": 0.00145
+    }
+  }
+}
+```
+
+**Utilities** (`src/workflow/utils/token_tracking.py`):
+- `calculate_cost(model: str, input_tokens: int, output_tokens: int) -> CostMetrics`
+  - Returns USD cost for a specific step based on model and token counts
+- `aggregate_step_metrics(step_metadata: dict) -> tuple[int, float]`
+  - Aggregates total tokens and cost across all steps
+- Model pricing data (Haiku, Sonnet, and future models)
+
+### LangGraph MemorySaver Checkpointer
+
+The LangGraph StateGraph uses **MemorySaver** checkpointer to maintain conversation state and enable future session persistence features.
+
+**Purpose**: Maintains complete state history across all workflow steps, enabling:
+- Future multi-turn conversations (client can continue from prior state)
+- State inspection for debugging and monitoring
+- Graceful recovery from failures
+- Session replay for troubleshooting
+
+**State Storage** (`ChainState`):
+```python
+ChainState = {
+    "messages": [HumanMessage, AIMessage, AIMessage, ...],  # Conversation history
+    "analysis": { "intent": "...", "entities": [...], ... },  # Analyze step output
+    "processed_content": { "content": "...", "confidence": 0.87, ... },  # Process step output
+    "final_response": "# Polished response text",  # Synthesize step output (accumulated)
+    "step_metadata": {  # Metrics per step
+        "analyze": { "elapsed_seconds": 1.2, "tokens": 450, "cost_usd": 0.001, ... },
+        "process": { "elapsed_seconds": 2.1, "tokens": 800, "cost_usd": 0.0024, ... },
+        "synthesize": { "elapsed_seconds": 1.5, "tokens": 900, "cost_usd": 0.00145, ... }
+    }
+}
+```
+
+**Checkpointer Integration** (in `src/workflow/chains/graph.py`):
+- Graph compiled with: `graph.compile(checkpointer=MemorySaver())`
+- Enables: `graph.ainvoke(state, {"configurable": {"thread_id": "session-123"}})`
+- Future enhancement: Support for multi-turn conversations and state recovery
+
+**Monitoring Benefits**:
+- State snapshots available for inspection at each step
+- Message history preserved for complete conversation context
+- Enables audit trails for compliance and debugging
+- Foundation for advanced features (session recovery, multi-turn chaining)
 
 ## Logging Architecture
 

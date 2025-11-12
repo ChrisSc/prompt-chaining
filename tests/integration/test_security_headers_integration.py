@@ -7,18 +7,12 @@ including protected/public endpoints, proxy headers, and error responses.
 
 import os
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, patch
 
 import jwt
 import pytest
 from fastapi.testclient import TestClient
 
 from workflow.main import create_app
-from workflow.models.openai import (
-    ChatCompletionChunk,
-    ChatCompletionStreamChoice,
-    ChoiceDelta,
-)
 
 # Use a consistent secret key for all tests
 TEST_JWT_SECRET = "test_secret_key_with_minimum_32_characters_required_for_testing"
@@ -88,58 +82,15 @@ def invalid_signature_token() -> str:
 
 
 @pytest.fixture
-def app_with_mocked_orchestrator():
-    """Create FastAPI app with mocked orchestrator."""
-    with patch("workflow.main.Orchestrator") as mock_orchestrator_class:
-        mock_orchestrator = AsyncMock()
-        mock_orchestrator.model = "claude-haiku-4-5-20251001"
-        mock_orchestrator.client = True  # Mark as initialized
-        mock_orchestrator_class.return_value = mock_orchestrator
-
-        app = create_app()
-        app.state.orchestrator = mock_orchestrator
-
-    return app
+def app():
+    """Create FastAPI app for testing."""
+    return create_app()
 
 
 @pytest.fixture
-def client(app_with_mocked_orchestrator) -> TestClient:
+def client(app) -> TestClient:
     """Create test client from app."""
-    return TestClient(app_with_mocked_orchestrator)
-
-
-@pytest.fixture
-def mock_orchestrator_streaming_response(app_with_mocked_orchestrator):
-    """Setup orchestrator to return streaming response."""
-
-    async def mock_process(request):
-        yield ChatCompletionChunk(
-            id="test-1",
-            created=0,
-            model="test",
-            choices=[
-                ChatCompletionStreamChoice(
-                    index=0,
-                    delta=ChoiceDelta(role="assistant", content="Hello"),
-                    finish_reason=None,
-                )
-            ],
-        )
-        yield ChatCompletionChunk(
-            id="test-2",
-            created=0,
-            model="test",
-            choices=[
-                ChatCompletionStreamChoice(
-                    index=0,
-                    delta=ChoiceDelta(),
-                    finish_reason="stop",
-                )
-            ],
-        )
-
-    app_with_mocked_orchestrator.state.orchestrator.process = mock_process
-    return app_with_mocked_orchestrator
+    return TestClient(app)
 
 
 class TestSecurityHeadersOnProtectedEndpoints:
@@ -149,7 +100,6 @@ class TestSecurityHeadersOnProtectedEndpoints:
         self,
         client: TestClient,
         valid_jwt_token: str,
-        mock_orchestrator_streaming_response,
     ) -> None:
         """Test /v1/chat/completions returns security headers with valid token."""
         response = client.post(
@@ -167,7 +117,7 @@ class TestSecurityHeadersOnProtectedEndpoints:
         assert "X-XSS-Protection" in response.headers
 
     def test_models_endpoint_returns_security_headers(
-        self, client: TestClient, valid_jwt_token: str, app_with_mocked_orchestrator
+        self, client: TestClient, valid_jwt_token: str
     ) -> None:
         """Test /v1/models endpoint returns security headers."""
         response = client.get(
@@ -184,7 +134,6 @@ class TestSecurityHeadersOnProtectedEndpoints:
         self,
         client: TestClient,
         valid_jwt_token: str,
-        mock_orchestrator_streaming_response,
     ) -> None:
         """Test /v1/chat/completions headers have correct values."""
         response = client.post(
@@ -404,7 +353,7 @@ class TestHeadersConsistency:
     """Test that headers are consistent across different scenarios."""
 
     def test_same_headers_on_multiple_requests(
-        self, client: TestClient, valid_jwt_token: str, mock_orchestrator_streaming_response
+        self, client: TestClient, valid_jwt_token: str
     ) -> None:
         """Test security headers are consistent across multiple requests."""
         response1 = client.get(
@@ -420,7 +369,7 @@ class TestHeadersConsistency:
         assert response2.headers["X-Frame-Options"] == "DENY"
 
     def test_same_headers_on_protected_and_public_endpoints(
-        self, client: TestClient, valid_jwt_token: str, mock_orchestrator_streaming_response
+        self, client: TestClient, valid_jwt_token: str
     ) -> None:
         """Test security headers are same on protected and public endpoints."""
         public_response = client.get("/health/")
@@ -455,7 +404,6 @@ class TestHTTPMethodsWithSecurityHeaders:
         self,
         client: TestClient,
         valid_jwt_token: str,
-        mock_orchestrator_streaming_response,
     ) -> None:
         """Test security headers on POST request."""
         response = client.post(
@@ -494,7 +442,6 @@ class TestHeadersWithContentTypes:
         self,
         client: TestClient,
         valid_jwt_token: str,
-        mock_orchestrator_streaming_response,
     ) -> None:
         """Test security headers with streaming response."""
         response = client.post(

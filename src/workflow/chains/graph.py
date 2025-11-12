@@ -23,12 +23,14 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any
 
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from workflow.chains.steps import analyze_step, process_step, synthesize_step
 from workflow.chains.validation import should_proceed_to_process, should_proceed_to_synthesize
 from workflow.models.chains import ChainConfig, ChainState
 from workflow.utils.logging import get_logger
+from workflow.utils.token_tracking import aggregate_step_metrics
 
 logger = get_logger(__name__)
 
@@ -155,9 +157,10 @@ def build_chain_graph(config: ChainConfig) -> Any:
     graph.add_edge("synthesize", END)
     graph.add_edge("error", END)
 
-    # Compile and return
-    compiled_graph = graph.compile()
-    logger.info("LangGraph StateGraph compiled successfully")
+    # Compile with MemorySaver checkpointer for state persistence and metrics tracking
+    checkpointer = MemorySaver()
+    compiled_graph = graph.compile(checkpointer=checkpointer)
+    logger.info("LangGraph StateGraph compiled successfully with MemorySaver checkpointer")
 
     return compiled_graph
 
@@ -264,6 +267,7 @@ async def stream_chain(
 
     start_time = time.time()
     accumulated_metadata = {}
+    final_state = None
 
     try:
         # Stream graph execution with message-level streaming
@@ -281,16 +285,28 @@ async def stream_chain(
                     if isinstance(step_metadata, dict):
                         accumulated_metadata.update(step_metadata)
 
+                # Store final state for metrics aggregation
+                final_state = event
+
                 # Yield the state update
                 yield event
 
         elapsed_time = time.time() - start_time
+
+        # Calculate aggregated metrics from step_metadata
+        if accumulated_metadata:
+            total_tokens, total_cost, total_elapsed = aggregate_step_metrics(accumulated_metadata)
+        else:
+            total_tokens, total_cost, total_elapsed = 0, 0.0, 0.0
 
         logger.info(
             "Chain streaming completed",
             extra={
                 "elapsed_seconds": elapsed_time,
                 "steps_executed": len(accumulated_metadata),
+                "total_tokens": total_tokens,
+                "total_cost_usd": total_cost,
+                "aggregated_elapsed_seconds": total_elapsed,
             },
         )
 
