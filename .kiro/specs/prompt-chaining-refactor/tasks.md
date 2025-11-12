@@ -70,8 +70,8 @@ Refer to these documents for implementation details, patterns, and examples.
     - Return "next_step" or "error" based on validation results
     - _Requirements: 2.5, 3.5_
 
-- [ ] 5. Implement chain step functions
-  - [ ] 5.1 Create `src/workflow/chains/steps.py` with analyze_step function
+- [x] 5. Implement chain step functions
+  - [x] 5.1 Create `src/workflow/chains/steps.py` with analyze_step function
     - Extract user message from ChainState.messages
     - Initialize ChatAnthropic with Haiku model and load chain_analyze.md prompt
     - Call LLM with system prompt and user message
@@ -80,7 +80,7 @@ Refer to these documents for implementation details, patterns, and examples.
     - Return state update with analysis and messages
     - _Requirements: 2.1, 3.1, 3.3, 4.5_
     - _Documentation: See `./documentation/langchain/INDEX.md` → `oss/python/langchain/models.md` for ChatAnthropic usage and `oss/python/integrations/providers/anthropic.md` for Anthropic integration_
-  - [ ] 5.2 Implement process_step function in `chains/steps.py`
+  - [x] 5.2 Implement process_step function in `chains/steps.py`
     - Extract analysis from ChainState.analysis
     - Build processing prompt from analysis context
     - Initialize ChatAnthropic with Sonnet model and load chain_process.md prompt
@@ -89,7 +89,7 @@ Refer to these documents for implementation details, patterns, and examples.
     - Return state update with processed_content and messages
     - _Requirements: 2.2, 3.1, 3.3, 4.5_
     - _Documentation: See `./documentation/langchain/INDEX.md` → `oss/python/langchain/models.md` for model configuration_
-  - [ ] 5.3 Implement synthesize_step async generator function in `chains/steps.py`
+  - [x] 5.3 Implement synthesize_step async generator function in `chains/steps.py`
     - Extract processed_content from ChainState.processed_content
     - Build synthesis prompt from processed content
     - Initialize ChatAnthropic with Haiku model, streaming=True, and load chain_synthesize.md prompt
