@@ -197,7 +197,7 @@ See [JWT_AUTHENTICATION.md](./JWT_AUTHENTICATION.md) for complete authentication
 
 ## Understanding the Prompt-Chaining Workflow
 
-The system implements a three-step prompt-chaining pattern that processes requests sequentially through specialized agents. Each step is independently configured with its own Claude model, token limits, and system prompt.
+The system implements a three-step prompt-chaining pattern orchestrated by **LangGraph StateGraph** that processes requests sequentially through specialized agents. Each step is independently configured with its own Claude model, token limits, and system prompt. State flows through the workflow via LangGraph's `ChainState` TypedDict with message accumulation and validation gates between steps.
 
 ### The Three-Phase Flow
 
@@ -225,30 +225,57 @@ Polishes and formats the response with appropriate styling for user consumption 
 - Ensures professional, user-ready output
 - Output: `SynthesisOutput` as structured JSON (final_text, formatting)
 
-### Data Flow Diagram
+### Data Flow Diagram with Validation Gates
 
 ```
 User Request
     ↓
 analyze_step() → Intent, Entities, Complexity
     ↓
-Validation Gate: Intent required?
+[Validation Gate: Intent required & non-empty?]
+    ├─→ PASS → process_step()
+    └─→ FAIL → error_step() returns error
     ↓
 process_step() → Generated Content with Confidence
     ↓
-Validation Gate: Confidence >= 0.5?
+[Validation Gate: Content required & Confidence >= 0.5?]
+    ├─→ PASS → synthesize_step()
+    └─→ FAIL → error_step() returns error
     ↓
 synthesize_step() → Polished Response (STREAMED)
     ↓
 Client receives response incrementally
 ```
 
+### Validation Gates for Quality Control
+
+Validation gates enforce data quality between steps and prevent bad data from cascading:
+
+**After Analysis Step**:
+- Gate validates `AnalysisOutput` schema
+- Business rule: `intent` field must be present and non-empty
+- Fails fast: Routes invalid analysis to error handler
+
+**After Processing Step**:
+- Gate validates `ProcessOutput` schema
+- Business rules:
+  - `content` field must be present and non-empty
+  - `confidence` must be >= 0.5 (minimum quality threshold)
+- Fails fast: Routes low-confidence or empty content to error handler
+
+**Benefits**:
+- Prevents empty intent from corrupting processing step
+- Prevents low-confidence responses from being synthesized
+- Enables early failure with clear error messages
+- Maintains workflow integrity and data quality
+
 ### Why This Pattern?
 
 - **Structured Reasoning**: Breaking down complex tasks into focused steps enables better reasoning at each stage
 - **Quality Control**: Validation gates between steps prevent bad data from cascading through the workflow
 - **Flexibility**: Each step can use different models, token limits, and configurations for optimal cost/quality
-- **Observability**: Independent step execution provides visibility into reasoning process
+- **LangGraph Orchestration**: StateGraph provides robust multi-step workflow management with message continuity
+- **Observability**: Independent step execution provides visibility into reasoning process and per-step token usage
 - **User Experience**: Streaming synthesis provides real-time responsiveness while maintaining quality
 - **Cost Optimization**: Fast Haiku models for most steps, with ability to upgrade to Sonnet if needed
 
@@ -283,12 +310,13 @@ For detailed information about system prompts, configuration, and architecture, 
 
 ### Prompt-Chaining Pattern with LangGraph
 
-The workflow uses **LangGraph StateGraph** (`src/workflow/chains/graph.py`) to orchestrate three sequential processing steps:
+The workflow uses **LangGraph StateGraph** (`src/workflow/chains/graph.py`) to orchestrate three sequential processing steps with validation gates:
 
 **Graph Structure**:
-- **Nodes**: analyze, process, synthesize, error
+- **Nodes**: analyze, process, synthesize, error (4 nodes)
 - **Flow**: START → analyze → (validation gate) → process → (validation gate) → synthesize → END
-- **Validation Gates**: Route invalid outputs to error handler
+- **Conditional Edges**: Validation gates route invalid outputs to error handler
+- **State Management**: ChainState TypedDict with `add_messages` reducer maintains message history
 - **Execution Modes**: Non-streaming (`invoke_chain`) and streaming (`stream_chain`)
 
 **Analysis Agent** (Intent Parser)
@@ -297,44 +325,35 @@ The workflow uses **LangGraph StateGraph** (`src/workflow/chains/graph.py`) to o
 - Output: `AnalysisOutput` with structured analysis data
 - Execution: Non-streaming via `ainvoke()` (default timeout: 15s)
 - System Prompt: `src/workflow/prompts/chain_analyze.md`
-- Validation: Intent must be non-empty
+- Validation Gate: Intent must be non-empty and non-whitespace
 
 **Processing Agent** (Content Generator)
 - Model: Configurable (default: Claude Haiku 4.5)
 - Role: Generate content based on analysis results
-- Output: `ProcessOutput` with generated content and confidence
+- Output: `ProcessOutput` with generated content and confidence score
 - Execution: Non-streaming via `ainvoke()` (default timeout: 30s)
 - System Prompt: `src/workflow/prompts/chain_process.md`
-- Validation: Confidence must be >= 0.5
+- Validation Gate: Content non-empty AND confidence >= 0.5 (minimum quality threshold)
 
 **Synthesis Agent** (Polish & Format)
 - Model: Configurable (default: Claude Haiku 4.5)
-- Role: Combine and format content into final response
-- Output: `SynthesisOutput` with polished final text
-- Execution: **Streaming via `astream()`** (default timeout: 20s)
+- Role: Polish and format content into final response
+- Output: `SynthesisOutput` with formatted final text
+- Execution: **Streaming via `astream()`** - token-by-token delivery (default timeout: 20s)
 - System Prompt: `src/workflow/prompts/chain_synthesize.md`
-- Streaming: Token-by-token delivery enabled for real-time client responses
+- Streaming: Only node that yields per-token; earlier steps run to completion
 
-### Performance Characteristics
+### Conditional Edge Logic
 
-- **Time Complexity**: O(N) where N = number of sequential steps (typically 3)
-- **Cost Complexity**: O(N) - same token cost as sequential processing
-- **Result**: Enables complex multi-step reasoning with structured outputs
+**Edge 1: analyze → should_proceed_to_process**
+- Validates: `AnalysisOutput` schema and intent non-empty
+- Routes: "process" (valid) or "error" (invalid)
 
-### LangGraph StateGraph & Message Conversion
+**Edge 2: process → should_proceed_to_synthesize**
+- Validates: `ProcessOutput` schema, content non-empty, confidence >= 0.5
+- Routes: "synthesize" (valid) or "error" (invalid)
 
-The workflow leverages LangGraph for robust multi-step orchestration:
-
-**Graph Components** (`src/workflow/chains/graph.py`):
-- `build_chain_graph(config)` - Compiles StateGraph with step nodes and conditional edges
-- `invoke_chain()` - Non-streaming execution for testing and batch processing
-- `stream_chain()` - Streaming execution with AsyncIterator for real-time client responses
-- `error_step()` - Graceful error handling when validation gates fail
-
-**Message Format Bridge** (`src/workflow/utils/message_conversion.py`):
-- `convert_openai_to_langchain_messages()` - Converts incoming OpenAI API format to LangChain
-- `convert_langchain_chunk_to_openai()` - Converts internal LangChain output to OpenAI format
-- Enables OpenAI API compatibility while using LangChain/LangGraph internally
+See ARCHITECTURE.md "Validation Gates: Examples and Failure Scenarios" for detailed success/failure path examples with actual state transitions.
 
 ### Sequential Processing with State Management
 
@@ -344,40 +363,41 @@ This architecture delivers multi-step reasoning benefits:
 - Analysis step extracts intent and context
 - Processing step builds on analysis results
 - Synthesis step polishes and formats output
-- Each step has its own prompt engineering and configuration
 
 **State Continuity**
-- LangGraph StateGraph manages state flow through `ChainState`
+- LangGraph StateGraph manages state through `ChainState` TypedDict
 - Message accumulation via `add_messages` reducer maintains conversation context
-- Step outputs feed into subsequent steps as structured data
-- Metadata tracking across entire workflow
-- Validation gates route invalid data to error handler
+- Step outputs populate dedicated state fields (analysis, processed_content, final_response)
+- Metadata tracking across entire workflow (per-step tokens, costs, timing)
+
+**Quality Control**
+- Validation gates enforce schema compliance and business rules
+- Invalid outputs route to error handler for graceful failure
+- Prevents low-quality intermediate results from cascading downstream
 
 **Flexibility**
-- Each step can use different Claude models (all Haiku, or mix Haiku + Sonnet)
-- Per-step token limits, temperature, and timeout configuration
-- Configurable validation gates between steps (can be disabled if needed)
-- Domain-customizable step outputs (AnalysisOutput, ProcessOutput, SynthesisOutput)
+- Each step independently configurable (model, tokens, temperature, timeout)
+- Per-step system prompts customizable in `src/workflow/prompts/`
+- Message conversion bridge enables OpenAI API compatibility with LangChain/LangGraph internally
 
 **Streaming Integration**
-- Synthesis step uses `astream()` for token-by-token delivery
+- Synthesis step uses `astream()` for token-by-token delivery to client
 - Earlier steps run to completion before synthesis begins streaming
-- Message conversion handles LangChain ↔ OpenAI format translation
-- Server-Sent Events (SSE) format for client-side streaming
+- SSE format for client-side streaming with [DONE] terminator
 
-**Observability**
-- Independent step execution with per-step logging
-- Token usage tracking across all steps
-- Cost metrics aggregated per request
-- Request ID propagation for distributed tracing
-- Validation gates log warnings on failures
+**Observability & Cost Tracking**
+- Per-step token usage and cost logging
+- Request ID propagation for end-to-end tracing
+- Total cost aggregation across all steps
 
 **Real-World Impact**
-- Complex analysis tasks that require multiple reasoning steps
+- Complex multi-step reasoning with quality control between steps
 - Structured outputs enable downstream processing and validation
-- Cost-optimized: Fast Haiku models for all steps, upgrade to Sonnet if needed
-- User experience: Streaming responses maintain perceived responsiveness
-- Error handling: Validation failures handled gracefully without cascading bad data
+- Cost-optimized: Fast Haiku for most steps, upgrade to Sonnet if complex reasoning needed
+- User experience: Streaming responses provide real-time feedback
+- Error handling: Validation failures handled gracefully without bad data cascading
+
+See ARCHITECTURE.md "Prompt-Chaining Step Functions" and "LangGraph StateGraph Implementation" for detailed state flow diagrams, token aggregation examples, and conditional edge logic.
 
 ## Use Cases
 

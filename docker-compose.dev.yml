@@ -6,7 +6,7 @@
 # source code hot-reload and DEBUG logging.
 
 services:
-  orchestrator-worker:
+  prompt-chaining:
     # Override environment for development
     environment:
       # Enable debug logging for development
@@ -67,7 +67,7 @@ services:
 #
 # 4. TESTING WITH DEVELOPMENT COMPOSE:
 #    Start: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
-#    Logs:  docker-compose logs -f orchestrator-worker
+#    Logs:  docker-compose logs -f prompt-chaining
 #    Test:  ./scripts/docker-test.sh (from host machine)
 #    Stop:  docker-compose down
 #

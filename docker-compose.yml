@@ -1,13 +1,13 @@
 services:
-  orchestrator-worker:
+  prompt-chaining:
     # Build configuration
     build:
       context: .
       dockerfile: Dockerfile
 
     # Image configuration
-    image: orchestrator-worker:latest
-    container_name: orchestrator-worker-api
+    image: prompt-chaining:latest
+    container_name: prompt-chaining-api
 
     # Port mapping
     ports:
@@ -41,7 +41,7 @@ services:
 
     # Network configuration
     networks:
-      - orchestrator-network
+      - prompt-chaining-network
 
     # Optional: Resource limits (uncomment and adjust for production)
     # deploy:
@@ -63,7 +63,7 @@ services:
     #   - ./.env:/app/.env:ro
 
 networks:
-  orchestrator-network:
+  prompt-chaining-network:
     driver: bridge
 
 # Usage:

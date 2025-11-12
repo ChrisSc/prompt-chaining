@@ -8,7 +8,6 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from workflow.agents.orchestrator import Orchestrator
 from workflow.api.dependencies import verify_bearer_token
 from workflow.api.limiter import limiter
 from workflow.chains.graph import stream_chain
@@ -23,38 +22,6 @@ from workflow.utils.message_conversion import (
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/v1", tags=["chat"])
-
-
-async def get_orchestrator(request: Request) -> Orchestrator:
-    """
-    Dependency to get the Orchestrator agent from app state.
-
-    Args:
-        request: FastAPI request object
-
-    Returns:
-        Orchestrator agent instance
-
-    Raises:
-        HTTPException: If agent is not available or not initialized
-    """
-    agent = request.app.state.orchestrator
-    if not agent:
-        logger.error("Orchestrator agent not available")
-        raise HTTPException(
-            status_code=503,
-            detail="Orchestrator agent not available",
-        )
-
-    # Check if agent is initialized (client must be ready)
-    if not agent.client:
-        logger.error("Orchestrator agent not initialized yet")
-        raise HTTPException(
-            status_code=503,
-            detail="Service is starting up, please retry in a moment",
-        )
-
-    return agent
 
 
 async def get_chain_graph(request: Request) -> Any:
@@ -87,7 +54,6 @@ async def get_chain_graph(request: Request) -> Any:
 async def create_chat_completion(
     request: Request,
     request_data: ChatCompletionRequest,
-    orchestrator: Orchestrator = Depends(get_orchestrator),
     chain_graph: Any = Depends(get_chain_graph),
     token: dict = Depends(verify_bearer_token),
 ):
@@ -201,51 +167,46 @@ async def create_chat_completion(
             )
             chunk_count = 0
 
-            # Use chain graph if available, otherwise fall back to orchestrator
-            if chain_graph is not None:
-                # Use prompt-chaining workflow via LangGraph
-                logger.debug("Using LangGraph chain graph for streaming")
+            # Use prompt-chaining workflow via LangGraph
+            if chain_graph is None:
+                logger.error("Chain graph not available - application not properly initialized")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Service initialization failed - chain graph not available",
+                )
 
-                # Convert OpenAI messages to LangChain format
-                langchain_messages = convert_openai_to_langchain_messages(request_data.messages)
+            logger.debug("Using LangGraph chain graph for streaming")
 
-                # Build initial state for the chain
-                initial_state = {
-                    "messages": langchain_messages,
-                    "analysis": None,
-                    "processed_content": None,
-                    "final_response": None,
-                    "step_metadata": {},
-                }
+            # Convert OpenAI messages to LangChain format
+            langchain_messages = convert_openai_to_langchain_messages(request_data.messages)
 
-                # Stream the chain execution
-                settings = request.app.state.settings
-                async for state_update in stream_chain(
-                    chain_graph, initial_state, settings.chain_config
-                ):
-                    # Extract content from the state update and convert to OpenAI format
-                    try:
-                        chunk = convert_langchain_chunk_to_openai(state_update)
-                        chunk_json = chunk.model_dump_json()
-                        yield f"data: {chunk_json}\n\n"
-                        chunk_count += 1
-                    except Exception as chunk_error:
-                        logger.warning(
-                            "Failed to convert chain state to OpenAI format",
-                            extra={"error": str(chunk_error)},
-                        )
-                        # Continue processing despite conversion error
-                        continue
+            # Build initial state for the chain
+            initial_state = {
+                "messages": langchain_messages,
+                "analysis": None,
+                "processed_content": None,
+                "final_response": None,
+                "step_metadata": {},
+            }
 
-            else:
-                # Fall back to orchestrator for backward compatibility
-                logger.debug("Using orchestrator agent for streaming (chain graph not available)")
-
-                async for chunk in orchestrator.process(request_data):
-                    # Format as Server-Sent Event
+            # Stream the chain execution
+            settings = request.app.state.settings
+            async for state_update in stream_chain(
+                chain_graph, initial_state, settings.chain_config
+            ):
+                # Extract content from the state update and convert to OpenAI format
+                try:
+                    chunk = convert_langchain_chunk_to_openai(state_update)
                     chunk_json = chunk.model_dump_json()
                     yield f"data: {chunk_json}\n\n"
                     chunk_count += 1
+                except Exception as chunk_error:
+                    logger.warning(
+                        "Failed to convert chain state to OpenAI format",
+                        extra={"error": str(chunk_error)},
+                    )
+                    # Continue processing despite conversion error
+                    continue
 
             # Send final [DONE] marker
             yield "data: [DONE]\n\n"
@@ -258,7 +219,6 @@ async def create_chat_completion(
                     "model": request_data.model,
                     "elapsed_seconds": elapsed_time,
                     "chunk_count": chunk_count,
-                    "mode": "chain_graph" if chain_graph is not None else "orchestrator",
                 },
             )
             logger.debug(

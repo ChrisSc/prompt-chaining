@@ -1,4 +1,4 @@
-# Multi-stage Dockerfile for Orchestrator Worker Service
+# Multi-stage Dockerfile for Prompt Chaining Service
 # Stage 1: Builder - compile dependencies with cache optimization
 FROM python:3.12-slim AS builder
 
@@ -46,7 +46,7 @@ WORKDIR /app
 
 # Copy application code with proper ownership
 # Copy main application package
-COPY --chown=appuser:appuser src/orchestrator_worker /app/src/orchestrator_worker
+COPY --chown=appuser:appuser src/workflow /app/src/workflow
 
 # Copy scripts directory for utilities like generate_jwt.py
 COPY --chown=appuser:appuser scripts /app/scripts
@@ -71,4 +71,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 # Use exec-form ENTRYPOINT and CMD for proper signal handling (SIGTERM, SIGINT)
 # This ensures the Python process receives signals correctly for graceful shutdown
 ENTRYPOINT ["python", "-m", "uvicorn"]
-CMD ["orchestrator_worker.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["workflow.main:app", "--host", "0.0.0.0", "--port", "8000"]

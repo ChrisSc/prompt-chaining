@@ -1,8 +1,5 @@
 """
-Orchestrator-Worker - Multi-agent orchestration platform with OpenAI-compatible API.
-
-This package provides a production-ready template for building agentic services
-that coordinate multiple AI agents working in parallel.
+prompt-chaining workflow
 """
 
 __version__ = "0.3.4"
