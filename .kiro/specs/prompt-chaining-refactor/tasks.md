@@ -141,13 +141,13 @@ Refer to these documents for implementation details, patterns, and examples.
     - Add examples of customizing chain behavior
     - _Requirements: 5.1, 5.6_
 
-- [ ] 9. Performance optimization and monitoring
-  - [ ] 9.1 Add timing and metrics collection
+- [x] 9. Performance optimization and monitoring
+  - [x] 9.1 Add timing and metrics collection
     - Log duration of each chain step
     - Track total tokens and cost per request
     - Monitor memory usage with checkpointer
     - _Requirements: 4.4_
-  - [ ] 9.2 Create performance benchmarks
+  - [x] 9.2 Create performance benchmarks
     - Benchmark different model combinations
     - Document cost/latency tradeoffs
     - _Requirements: 4.1_
