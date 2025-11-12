@@ -98,3 +98,5 @@ scripts/docker-test.sh
 .pre-commit-config.yaml
 CHANGELOG.md
 LICENSE
+
+documentation
