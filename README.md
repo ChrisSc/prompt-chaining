@@ -40,6 +40,8 @@ This template provides a complete foundation for creating agentic services that:
 - **Rate Limiting**: Per-user JWT + IP-based, configurable limits, standard HTTP 429 responses
 - **FastAPI**: Modern async Python framework with automatic OpenAPI docs
 - **Type-Safe**: Full type hints and Pydantic validation
+- **LangChain Integration**: LangChain 1.0.0+ for building prompt chains and managing LLM interactions
+- **LangGraph Support**: LangGraph 1.0.0+ for composing multi-step agentic workflows and complex prompt-chaining patterns
 
 ## Quick Start
 
