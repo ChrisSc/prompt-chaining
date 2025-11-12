@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, TextBlock
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from pydantic import ValidationError
 
 from workflow.models.chains import (
@@ -440,9 +440,9 @@ async def synthesize_step(state: ChainState, config: ChainConfig) -> dict[str, A
             if isinstance(message.content, str):
                 final_response = message.content
             elif isinstance(message.content, list) and len(message.content) > 0:
-                # Handle list of content blocks (e.g., TextBlock)
+                # Handle list of content blocks
                 first_block = message.content[0]
-                if isinstance(first_block, TextBlock) or hasattr(first_block, "text"):
+                if hasattr(first_block, "text"):
                     final_response = first_block.text
                 elif hasattr(first_block, "content"):
                     final_response = first_block.content
