@@ -197,8 +197,12 @@ async def create_chat_completion(
                 chain_graph, initial_state, settings.chain_config
             ):
                 # Capture step metadata for aggregation
-                if "step_metadata" in state_update:
-                    final_step_metadata.update(state_update.get("step_metadata", {}))
+                # state_update structure: {"node_name": {"analysis": {...}, "step_metadata": {...}, ...}}
+                for node_name, node_update in state_update.items():
+                    if isinstance(node_update, dict):
+                        step_metadata = node_update.get("step_metadata", {})
+                        if isinstance(step_metadata, dict):
+                            final_step_metadata.update(step_metadata)
 
                 # Extract content from the state update and convert to OpenAI format
                 try:

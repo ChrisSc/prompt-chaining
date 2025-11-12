@@ -20,6 +20,7 @@ Components:
 
 import asyncio
 import time
+import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -122,15 +123,28 @@ def build_chain_graph(config: ChainConfig) -> Any:
     graph = StateGraph(ChainState)
 
     # Add nodes for each step
-    # Use lambda to capture config in closure
-    graph.add_node("analyze", lambda state: analyze_step(state, config))
-    graph.add_node("process", lambda state: process_step(state, config))
+    # Create wrapper functions that LangGraph can properly invoke
+    # LangGraph will detect these are async and handle them correctly
+    async def analyze_wrapper(state: ChainState) -> dict[str, Any]:
+        return await analyze_step(state, config)
+
+    async def process_wrapper(state: ChainState) -> dict[str, Any]:
+        return await process_step(state, config)
+
+    async def synthesize_wrapper(state: ChainState) -> dict[str, Any]:
+        return await synthesize_step(state, config)
+
+    async def error_wrapper(state: ChainState) -> dict[str, Any]:
+        return await error_step(state, config)
+
+    graph.add_node("analyze", analyze_wrapper)
+    graph.add_node("process", process_wrapper)
 
     # synthesize_step: Returns a single dict (not a generator) for LangGraph compatibility.
     # Streaming for HTTP SSE responses is handled at the FastAPI endpoint level.
     # See stream_chain() in this module for how synthesis output is streamed to clients.
-    graph.add_node("synthesize", lambda state: synthesize_step(state, config))
-    graph.add_node("error", lambda state: error_step(state, config))
+    graph.add_node("synthesize", synthesize_wrapper)
+    graph.add_node("error", error_wrapper)
 
     # Add START edge to analyze
     graph.add_edge(START, "analyze")
@@ -275,17 +289,24 @@ async def stream_chain(
         # Stream graph execution with state update streaming
         # Uses stream_mode="updates" to yield state dict updates from each node
         # (See ./documentation/langchain/ADVANCED_INDEX.md - LangGraph streaming modes)
-        async for event in await graph.astream(
+        thread_id = str(uuid.uuid4())
+        async for event in graph.astream(
             initial_state,
+            config={"configurable": {"thread_id": thread_id}},
             stream_mode="updates",
         ):
-            # Each event is a state update
+            # Each event is a state update in the format:
+            # {"node_name": {"field1": value1, "field2": value2, ...}}
             if isinstance(event, dict):
-                # Accumulate metadata across steps
-                if "step_metadata" in event:
-                    step_metadata = event.get("step_metadata", {})
-                    if isinstance(step_metadata, dict):
-                        accumulated_metadata.update(step_metadata)
+                # Extract step_metadata from the node update
+                # With stream_mode="updates", event structure is:
+                # {"node_name": {"analysis": {...}, "step_metadata": {...}, ...}}
+                for node_name, node_update in event.items():
+                    if isinstance(node_update, dict):
+                        # Accumulate metadata across steps
+                        step_metadata = node_update.get("step_metadata", {})
+                        if isinstance(step_metadata, dict):
+                            accumulated_metadata.update(step_metadata)
 
                 # Yield the state update
                 yield event

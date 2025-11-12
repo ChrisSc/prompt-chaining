@@ -40,4 +40,4 @@ echo "API will be available at: http://localhost:${API_PORT}"
 echo "Documentation at: http://localhost:${API_PORT}/docs"
 echo ""
 
-fastapi dev src/orchestrator_worker/main.py --host ${API_HOST} --port ${API_PORT}
+fastapi dev src/workflow/main.py --host ${API_HOST} --port ${API_PORT}
