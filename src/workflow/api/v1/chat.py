@@ -222,7 +222,9 @@ async def create_chat_completion(
 
             # Calculate aggregated metrics from step metadata
             if final_step_metadata:
-                total_tokens, total_cost_usd, aggregated_elapsed = aggregate_step_metrics(final_step_metadata)
+                total_tokens, total_cost_usd, aggregated_elapsed = aggregate_step_metrics(
+                    final_step_metadata
+                )
             else:
                 total_tokens, total_cost_usd, aggregated_elapsed = 0, 0.0, 0.0
 

@@ -126,8 +126,9 @@ def build_chain_graph(config: ChainConfig) -> Any:
     graph.add_node("analyze", lambda state: analyze_step(state, config))
     graph.add_node("process", lambda state: process_step(state, config))
 
-    # Note: synthesize_step is an async generator for streaming
-    # LangGraph will handle this properly when used with astream()
+    # synthesize_step: Returns a single dict (not a generator) for LangGraph compatibility.
+    # Streaming for HTTP SSE responses is handled at the FastAPI endpoint level.
+    # See stream_chain() in this module for how synthesis output is streamed to clients.
     graph.add_node("synthesize", lambda state: synthesize_step(state, config))
     graph.add_node("error", lambda state: error_step(state, config))
 
@@ -238,12 +239,14 @@ async def stream_chain(
     Stream the prompt-chaining graph execution with async generator interface.
 
     Executes the graph with streaming enabled (astream), yielding state updates
-    for each step. This enables token-by-token delivery to the client during
-    the synthesis step while maintaining proper state management through all steps.
+    from each step. All steps (analyze, process, synthesize) are non-streaming
+    at the LangGraph node level and return single dictionaries. State updates are
+    yielded for each step completion.
 
-    The synthesize step is the primary streaming phase - it uses astream internally
-    and yields incremental text updates. Earlier steps (analyze, process) are
-    non-streaming but their state updates are also yielded.
+    Streaming for HTTP SSE delivery to clients happens at the FastAPI endpoint
+    level, where final_response is streamed back to users. This architecture
+    ensures LangGraph nodes follow the single-dict-return pattern while still
+    supporting streaming responses to end users.
 
     Args:
         graph: Compiled LangGraph StateGraph
@@ -267,26 +270,22 @@ async def stream_chain(
 
     start_time = time.time()
     accumulated_metadata = {}
-    final_state = None
 
     try:
-        # Stream graph execution with message-level streaming
-        # This uses stream_mode="messages" to get token-level updates during synthesis
+        # Stream graph execution with state update streaming
+        # Uses stream_mode="updates" to yield state dict updates from each node
+        # (See ./documentation/langchain/ADVANCED_INDEX.md - LangGraph streaming modes)
         async for event in await graph.astream(
             initial_state,
-            stream_mode="messages",
+            stream_mode="updates",
         ):
             # Each event is a state update
-            # The synthesize step yields incremental updates during streaming
             if isinstance(event, dict):
                 # Accumulate metadata across steps
                 if "step_metadata" in event:
                     step_metadata = event.get("step_metadata", {})
                     if isinstance(step_metadata, dict):
                         accumulated_metadata.update(step_metadata)
-
-                # Store final state for metrics aggregation
-                final_state = event
 
                 # Yield the state update
                 yield event

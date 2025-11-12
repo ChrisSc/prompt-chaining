@@ -16,12 +16,11 @@ of each step. Token usage and costs are tracked throughout execution.
 
 import json
 import time
-from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
 from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, TextBlock
 from pydantic import ValidationError
 
 from workflow.models.chains import (
@@ -359,31 +358,32 @@ async def process_step(state: ChainState, config: ChainConfig) -> dict[str, Any]
         raise
 
 
-async def synthesize_step(state: ChainState, config: ChainConfig) -> AsyncIterator[dict[str, Any]]:
+async def synthesize_step(state: ChainState, config: ChainConfig) -> dict[str, Any]:
     """
-    Synthesis step: Polish and format the final response (streaming).
+    Synthesis step: Polish and format the final response.
 
     This is the final step in the prompt-chaining workflow. It takes the processed
     content from the previous step and transforms it into a polished, professionally
     formatted response optimized for readability and delivery.
 
-    Unlike the other steps, this step uses streaming (astream) to incrementally
-    yield response chunks, enabling real-time delivery to the user.
+    This step executes as a non-streaming LangGraph node that returns a single
+    dictionary with the complete synthesis result. Streaming for HTTP SSE responses
+    is handled at the FastAPI endpoint level.
 
     Args:
         state: Current ChainState containing processed content and messages
         config: ChainConfig with model selection, token limits, and timeouts
 
-    Yields:
-        Dictionary with state updates for each chunk:
-        - final_response: Accumulated text from streaming chunks
-        - messages: Appended response chunks
-        - step_metadata: Tracking info (tokens, cost, duration)
+    Returns:
+        Dictionary with state updates:
+        - final_response: Complete synthesized text
+        - synthesis_output: SynthesisOutput with formatting details
+        - step_metadata: Complete tracking info (tokens, cost, duration)
 
     Raises:
-        ValidationError: If the final accumulated response doesn't conform to SynthesisOutput
-        FileNotFoundError: If the system prompt file is not found
         ValueError: If processed_content is not available in state
+        FileNotFoundError: If the system prompt file is not found
+        Exception: On API or processing errors
     """
     start_time = time.time()
 
@@ -416,12 +416,12 @@ async def synthesize_step(state: ChainState, config: ChainConfig) -> AsyncIterat
         f"Produce a polished, formatted final response."
     )
 
-    # Initialize ChatAnthropic client with streaming enabled
+    # Initialize ChatAnthropic client (non-streaming)
     llm = ChatAnthropic(
         model=config.synthesize.model,
         temperature=config.synthesize.temperature,
         max_tokens=config.synthesize.max_tokens,
-        streaming=True,
+        streaming=False,
     )
 
     # Prepare messages for LLM
@@ -431,39 +431,35 @@ async def synthesize_step(state: ChainState, config: ChainConfig) -> AsyncIterat
     ]
 
     try:
-        accumulated_text = ""
+        # Call Claude API and collect full response (not streaming)
+        message = await llm.ainvoke(messages)
+
+        # Extract text from response
+        final_response = ""
+        if message.content:
+            if isinstance(message.content, str):
+                final_response = message.content
+            elif isinstance(message.content, list) and len(message.content) > 0:
+                # Handle list of content blocks (e.g., TextBlock)
+                first_block = message.content[0]
+                if isinstance(first_block, TextBlock) or hasattr(first_block, "text"):
+                    final_response = first_block.text
+                elif hasattr(first_block, "content"):
+                    final_response = first_block.content
+                else:
+                    final_response = str(first_block)
+
+        # Extract token usage from response
         total_input_tokens = 0
         total_output_tokens = 0
+        if hasattr(message, "usage_metadata") and message.usage_metadata:
+            total_input_tokens = message.usage_metadata.get("input_tokens", 0)
+            total_output_tokens = message.usage_metadata.get("output_tokens", 0)
 
-        # Stream response from LLM
-        async for chunk in await llm.astream(messages):
-            # Extract text content from chunk
-            chunk_text = chunk.content if hasattr(chunk, "content") else str(chunk)
-
-            # Accumulate text for final response
-            accumulated_text += chunk_text
-
-            # Extract token usage from chunk if available (typically only on final chunk)
-            if hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
-                total_input_tokens = chunk.usage_metadata.get("input_tokens", 0)
-                total_output_tokens = chunk.usage_metadata.get("output_tokens", 0)
-
-            # Yield incremental state update
-            yield {
-                "final_response": accumulated_text,
-                "messages": [chunk],  # Append chunk to messages
-                "step_metadata": {
-                    "synthesize": {
-                        "elapsed_seconds": time.time() - start_time,
-                        "accumulated_output": len(accumulated_text),
-                    }
-                },
-            }
-
-        # Parse final accumulated text into SynthesisOutput
+        # Parse final response into SynthesisOutput
         try:
             # Remove markdown code blocks if present
-            response_text = accumulated_text
+            response_text = final_response
             if response_text.startswith("```"):
                 response_text = response_text.split("```")[1]
                 if response_text.startswith("json"):
@@ -474,16 +470,16 @@ async def synthesize_step(state: ChainState, config: ChainConfig) -> AsyncIterat
 
         except (json.JSONDecodeError, ValidationError) as e:
             logger.warning(
-                "Failed to parse synthesis step response as JSON, using accumulated text",
+                "Failed to parse synthesis step response as JSON, using response text",
                 extra={
                     "step": "synthesize",
                     "error": str(e),
-                    "accumulated_length": len(accumulated_text),
+                    "response_length": len(final_response),
                 },
             )
-            # If parsing fails, create a SynthesisOutput from accumulated text
+            # If parsing fails, create a SynthesisOutput from response text
             synthesis_output = SynthesisOutput(
-                final_text=accumulated_text,
+                final_text=final_response,
                 formatting="plain",
             )
 
@@ -510,10 +506,9 @@ async def synthesize_step(state: ChainState, config: ChainConfig) -> AsyncIterat
             },
         )
 
-        # Yield final state update with complete metadata
-        yield {
+        # Return single dict with complete synthesis result for LangGraph
+        return {
             "final_response": synthesis_output.final_text,
-            "messages": [],  # No additional messages to append
             "step_metadata": {
                 "synthesize": {
                     "elapsed_seconds": elapsed_time,
