@@ -35,7 +35,7 @@ def stream_chat(prompt: str, max_tokens: int = 500, bearer_token: str | None = N
         headers["X-Request-ID"] = f"req_{int(uuid.uuid4().int % 1000000000)}"
 
     payload = {
-        "model": "template-service-v1",
+        "model": "prompt-chaining",
         "messages": [
             {"role": "user", "content": prompt},
         ],

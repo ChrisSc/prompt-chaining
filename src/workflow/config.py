@@ -61,7 +61,7 @@ class Settings(BaseSettings):
 
     # Service Model Display Name
     service_model_name: str = Field(
-        default="prompt_chaining",
+        default="prompt-chaining",
         description="Display name for service model in API responses",
     )
 
