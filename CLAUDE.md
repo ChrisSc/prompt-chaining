@@ -30,6 +30,8 @@ cp .env.example .env
 # Edit .env: add ANTHROPIC_API_KEY and JWT_SECRET_KEY
 ```
 
+This installs all dependencies including LangChain 1.0.0+ and LangGraph 1.0.0+, which are required for the prompt-chaining pattern and multi-step agentic workflows.
+
 ## Configuration Reference
 
 **Environment variables only** (`.env`). Never commit secrets.
@@ -70,7 +72,10 @@ cp .env.example .env
 1. `cp .env.example .env`
 2. Add `ANTHROPIC_API_KEY=sk-ant-...`
 3. Add `JWT_SECRET_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(32))")`
-4. For development: `pip install -e ".[dev]"` then `./scripts/dev.sh`
+4. For development:
+   - Create virtual environment: `python -m venv .venv && source .venv/bin/activate`
+   - Install dependencies: `pip install -e ".[dev]"` (includes LangChain 1.0.0+ and LangGraph 1.0.0+)
+   - Start server: `./scripts/dev.sh`
 5. For Docker: `docker-compose up -d`
 
 ## Docker Deployment
