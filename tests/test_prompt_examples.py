@@ -27,7 +27,7 @@ def extract_json_examples(file_path: str) -> list[dict[str, Any]]:
     Returns:
         List of parsed JSON objects from code blocks
     """
-    with open(file_path, "r") as f:
+    with open(file_path) as f:
         content = f.read()
 
     pattern = r"```json\n(.*?)\n```"
@@ -56,13 +56,17 @@ class TestAnalysisOutputExamples:
     def test_all_examples_are_valid_json(self, examples):
         """All examples should be valid JSON."""
         for i, example in enumerate(examples):
-            assert "_parse_error" not in example, f"Example {i} has JSON parse error: {example.get('_parse_error')}"
+            assert (
+                "_parse_error" not in example
+            ), f"Example {i} has JSON parse error: {example.get('_parse_error')}"
 
     def test_all_examples_have_required_fields(self, examples):
         """All examples should have required AnalysisOutput fields."""
         required = {"intent", "key_entities", "complexity", "context"}
         for i, example in enumerate(examples):
-            assert required.issubset(example.keys()), f"Example {i} missing fields: {required - set(example.keys())}"
+            assert required.issubset(
+                example.keys()
+            ), f"Example {i} missing fields: {required - set(example.keys())}"
 
     def test_intent_is_valid_string(self, examples):
         """Intent field should be non-empty string."""
@@ -73,7 +77,9 @@ class TestAnalysisOutputExamples:
     def test_key_entities_is_list_of_strings(self, examples):
         """Key entities should be list of non-empty strings."""
         for i, example in enumerate(examples):
-            assert isinstance(example["key_entities"], list), f"Example {i}: key_entities must be list"
+            assert isinstance(
+                example["key_entities"], list
+            ), f"Example {i}: key_entities must be list"
             for j, entity in enumerate(example["key_entities"]):
                 assert isinstance(entity, str), f"Example {i}[{j}]: entity must be string"
 
@@ -81,9 +87,9 @@ class TestAnalysisOutputExamples:
         """Complexity should be one of: simple, moderate, complex."""
         valid_values = {"simple", "moderate", "complex"}
         for i, example in enumerate(examples):
-            assert example["complexity"] in valid_values, (
-                f"Example {i}: complexity must be one of {valid_values}, got '{example['complexity']}'"
-            )
+            assert (
+                example["complexity"] in valid_values
+            ), f"Example {i}: complexity must be one of {valid_values}, got '{example['complexity']}'"
 
     def test_context_is_dict(self, examples):
         """Context should be a dictionary."""
@@ -124,7 +130,9 @@ class TestProcessOutputExamples:
         """All examples should have required ProcessOutput fields."""
         required = {"content", "confidence", "metadata"}
         for i, example in enumerate(examples):
-            assert required.issubset(example.keys()), f"Example {i} missing fields: {required - set(example.keys())}"
+            assert required.issubset(
+                example.keys()
+            ), f"Example {i} missing fields: {required - set(example.keys())}"
 
     def test_content_is_valid_string(self, examples):
         """Content field should be non-empty string."""
@@ -137,7 +145,9 @@ class TestProcessOutputExamples:
         for i, example in enumerate(examples):
             confidence = example["confidence"]
             assert isinstance(confidence, (int, float)), f"Example {i}: confidence must be number"
-            assert 0.0 <= confidence <= 1.0, f"Example {i}: confidence {confidence} outside valid range [0.0, 1.0]"
+            assert (
+                0.0 <= confidence <= 1.0
+            ), f"Example {i}: confidence {confidence} outside valid range [0.0, 1.0]"
 
     def test_metadata_is_dict(self, examples):
         """Metadata should be a dictionary."""
@@ -180,7 +190,9 @@ class TestSynthesisOutputExamples:
         """All examples should have required SynthesisOutput fields."""
         required = {"final_text", "formatting"}
         for i, example in enumerate(examples):
-            assert required.issubset(example.keys()), f"Example {i} missing fields: {required - set(example.keys())}"
+            assert required.issubset(
+                example.keys()
+            ), f"Example {i} missing fields: {required - set(example.keys())}"
 
     def test_final_text_is_valid_string(self, examples):
         """Final text should be non-empty string."""
@@ -192,9 +204,9 @@ class TestSynthesisOutputExamples:
         """Formatting should be one of: markdown, plain, structured."""
         valid_values = {"markdown", "plain", "structured"}
         for i, example in enumerate(examples):
-            assert example["formatting"] in valid_values, (
-                f"Example {i}: formatting must be one of {valid_values}, got '{example['formatting']}'"
-            )
+            assert (
+                example["formatting"] in valid_values
+            ), f"Example {i}: formatting must be one of {valid_values}, got '{example['formatting']}'"
 
     def test_examples_pass_pydantic_validation(self, examples):
         """All examples should pass Pydantic SynthesisOutput validation."""
@@ -224,7 +236,6 @@ class TestExampleIntegration:
         # This is a documentation/integration test
         # In real usage, simple complexity should lead to simpler content,
         # complex should lead to detailed content
-        pass
 
     def test_no_extra_fields_in_examples(self):
         """Verify examples don't contain extra fields beyond schema."""

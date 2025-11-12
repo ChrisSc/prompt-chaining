@@ -173,6 +173,23 @@ docker-compose exec orchestrator-worker python -m pytest tests/ -v
 - Model: Configurable (default: Claude Haiku 4.5)
 - Polishes and formats content, returns SynthesisOutput with final response
 
+**Validation Gates** (`src/workflow/chains/validation.py`)
+- File: `src/workflow/chains/validation.py`
+- Purpose: Enforce schema compliance and business rules between chain steps
+- Base class: `ValidationGate` - Pydantic schema validation with extensible design
+- Subclasses:
+  - `AnalysisValidationGate`: Validates `AnalysisOutput` (intent required and non-empty)
+  - `ProcessValidationGate`: Validates `ProcessOutput` (content required, confidence >= 0.5)
+- Conditional edge functions:
+  - `should_proceed_to_process(state)` - Routes "process" or "error" after analysis
+  - `should_proceed_to_synthesize(state)` - Routes "synthesize" or "error" after processing
+- Business rules enforced:
+  - Analysis: intent must be present and non-empty string
+  - Process: content must be non-empty, confidence score >= 0.5 (minimum quality threshold)
+- Error handling: Invalid outputs logged at WARNING level, route to error handler
+- Transparent type handling: Works with dicts, Pydantic models, and strings
+- Enables fast failure on quality issues without cascading bad data through workflow
+
 ### Orchestration via LangGraph
 - Uses LangGraph StateGraph for sequential step execution
 - State flows through ChainState TypedDict with add_messages reducer
@@ -729,6 +746,70 @@ done
 - Ensure bearer token set
 - Test with curl: `curl -N -H "Authorization: Bearer $TOKEN" http://localhost:8000/...`
 - Review server logs
+
+### Validation Gates
+
+Validation gates enforce data quality between prompt-chaining steps. They validate step outputs and route to error handler if validation fails.
+
+**Configuration:**
+```env
+# Validation gates are enabled by default
+# In ChainConfig (src/workflow/models/chains.py):
+# enable_validation=True        # Enable/disable all validation gates
+# strict_validation=False       # True: fail fast, False: warn and continue
+```
+
+**When Validation Occurs:**
+- **After Analysis Step**: `AnalysisValidationGate` validates `AnalysisOutput`
+- **After Processing Step**: `ProcessValidationGate` validates `ProcessOutput`
+
+**Business Rules:**
+- **Analysis**: `intent` field must be present and non-empty (whitespace is stripped)
+- **Processing**: `content` must be non-empty, `confidence` must be >= 0.5 (minimum quality threshold)
+
+**Common Validation Failures & Solutions:**
+
+**Empty Intent Error**
+- Symptom: Log shows "Analysis validation failed: 'intent' field is required and must be non-empty"
+- Cause: Analysis step produced empty intent extraction
+- Solution: Review `chain_analyze.md` prompt, ensure it extracts clear user intent from requests
+- Check: Run analysis step in isolation to test prompt quality
+
+**Low Confidence Error**
+- Symptom: Log shows "Processing validation failed: 'confidence' must be >= 0.5"
+- Cause: Processing step returned low confidence (< 0.5) in generated content
+- Solution:
+  - Adjust `chain_process.md` prompt to produce higher-quality content
+  - Review analysis output to ensure sufficient context is provided
+  - Check if task is too complex for Haiku model (upgrade to Sonnet)
+
+**Empty Content Error**
+- Symptom: Log shows "Processing validation failed: 'content' field is required and must be non-empty"
+- Cause: Processing step failed to generate content
+- Solution:
+  - Verify analysis step extracted clear intent
+  - Check `chain_process.md` prompt is well-formed
+  - Ensure sufficient tokens allocated (check `process_max_tokens` in config)
+
+**Validation Disabled Debugging**
+- Temporarily disable validation for debugging: Set `enable_validation=False` in `ChainConfig`
+- This allows bad data to flow through for investigating downstream issues
+- Always re-enable in production
+
+**Viewing Validation Logs**
+```bash
+# Check validation errors in logs
+LOG_LEVEL=DEBUG ./scripts/dev.sh
+grep -i "validation" logs.json
+
+# Filter to validation failures only
+grep "validation failed" logs.json
+```
+
+**Adjusting Thresholds:**
+- Confidence threshold is hardcoded at 0.5 in `ProcessValidationGate.validate()`
+- To change: Edit `confidence < 0.5` check in `src/workflow/chains/validation.py`
+- Consider impact: Lower threshold accepts lower-quality outputs; higher threshold may reject valid results
 
 ### Request Too Large (413)
 **Symptoms:** HTTP 413 on POST requests, "Request body too large" error

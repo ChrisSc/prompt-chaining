@@ -299,12 +299,69 @@ This strict format is critical for prompt-chaining workflows where structured ou
 
 ### Validation Gates
 
-Optional validation gates run between steps:
-- **After Analysis**: Verify intent extraction and entity identification
-- **After Processing**: Verify content quality and confidence threshold
-- **After Synthesis**: Verify final output meets quality standards
+Data quality enforcement between chain steps via schema and business logic validation.
 
-Configurable via `enable_validation` and `strict_validation` parameters.
+**Purpose**: Validation gates ensure step outputs conform to expected schemas and satisfy business rules before proceeding. Invalid outputs trigger error routing in the LangGraph workflow.
+
+**Base Class Architecture**:
+- `ValidationGate` (base class): Schema validation with Pydantic models
+  - `validate(data)` returns tuple of (is_valid: bool, error_message: str | None)
+  - Handles type checking and required field validation
+  - Subclasses override for domain-specific business rules
+
+**Step-Specific Gates**:
+
+1. **AnalysisValidationGate** (`src/workflow/chains/validation.py`)
+   - Validates `AnalysisOutput` schema
+   - Business rules:
+     - `intent` field required and must be non-empty (after stripping whitespace)
+     - `key_entities` must be a list (can be empty)
+     - `complexity` must be valid enum value
+   - Returns structured error messages on failure
+
+2. **ProcessValidationGate** (`src/workflow/chains/validation.py`)
+   - Validates `ProcessOutput` schema
+   - Business rules:
+     - `content` field required and must be non-empty (after stripping whitespace)
+     - `confidence` must be numeric and >= 0.5 (minimum quality threshold)
+     - `confidence` must be <= 1.0
+     - `metadata` optional but if present must be valid dict
+   - Confidence threshold enforces quality gates (50% minimum confidence required)
+
+**LangGraph Integration**:
+
+Conditional edge functions route workflow based on validation results:
+- `should_proceed_to_process(state)` → "process" (valid) or "error" (invalid)
+  - Called after analysis step
+  - Validates analysis output in ChainState["analysis"]
+  - Routes to processing step or error handler
+- `should_proceed_to_synthesize(state)` → "synthesize" (valid) or "error" (invalid)
+  - Called after processing step
+  - Validates processed content in ChainState["processed_content"]
+  - Routes to synthesis step or error handler
+
+**Error Handling**:
+- Invalid data triggers error edge, preventing bad data from reaching next step
+- Comprehensive error messages logged at WARNING level
+- Errors include field names, failure reasons, and expected constraints
+- State continues to error handler for graceful failure recovery
+
+**Configuration**:
+Via `ChainConfig`:
+- `enable_validation: bool = True` - Enable/disable all validation gates
+- `strict_validation: bool = False` - Fail fast (strict) vs. warn and continue (lenient)
+
+**Data Type Support**:
+Edge functions handle multiple input types transparently:
+- **Dictionaries**: Direct validation
+- **Pydantic Models**: Converted to dict via `model_dump()`
+- **Strings** (ProcessOutput only): Wrapped with default confidence 0.8 for synthesis
+
+**Real-World Impact**:
+- Prevents low-confidence or incomplete analysis from corrupting processing
+- Enforces data quality boundaries between interdependent steps
+- Enables fast failure on quality issues vs. cascading bad data
+- Supports both strict and lenient validation modes for different use cases
 
 ### LangGraph Integration
 

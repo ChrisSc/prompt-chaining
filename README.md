@@ -36,11 +36,11 @@ This template provides a complete foundation for creating prompt-chaining workfl
 - **Structured Outputs**: Type-safe step models (AnalysisOutput, ProcessOutput, SynthesisOutput)
 - **Flexible Configuration**: Per-step model selection, token limits, temperature, and timeouts
 - **Observability**: Comprehensive logging, error handling, and configuration
+- **Validation Gates**: Data quality enforcement between steps with schema validation and business rules (intent required, confidence >= 0.5). Invalid outputs route to error handler, preventing bad data from cascading through the workflow.
 - **Token Usage Tracking**: Automatic cost tracking with per-step token/cost logging for workflow validation and optimization. Every API call logs input/output tokens and USD costs, with aggregated metrics across all steps for complete cost visibility.
 - **Request ID Propagation**: Automatic end-to-end request tracing through all steps to Anthropic API for debugging and distributed tracing
 - **Request Size Validation**: Protects against memory exhaustion with configurable request body size limits (default 1MB)
 - **Request Timeout Enforcement**: Prevents runaway requests from consuming resources indefinitely. Separate timeouts for analysis (15s default), processing (30s default), and synthesis (20s default) phases ensure predictable behavior. Configurable via environment variables for different deployment requirements.
-- **Validation Gates**: Optional validation between steps with configurable strictness
 - **Circuit Breaker**: Automatic retry with exponential backoff for Anthropic API resilience
 - **Security Headers**: Standard HTTP security headers (X-Content-Type-Options, X-Frame-Options, X-XSS-Protection, Strict-Transport-Security) enabled by default to protect against common web attacks
 - **Rate Limiting**: Per-user JWT + IP-based, configurable limits, standard HTTP 429 responses
