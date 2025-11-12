@@ -281,34 +281,60 @@ For detailed information about system prompts, configuration, and architecture, 
 
 ## Architecture
 
-### Prompt-Chaining Pattern
+### Prompt-Chaining Pattern with LangGraph
+
+The workflow uses **LangGraph StateGraph** (`src/workflow/chains/graph.py`) to orchestrate three sequential processing steps:
+
+**Graph Structure**:
+- **Nodes**: analyze, process, synthesize, error
+- **Flow**: START → analyze → (validation gate) → process → (validation gate) → synthesize → END
+- **Validation Gates**: Route invalid outputs to error handler
+- **Execution Modes**: Non-streaming (`invoke_chain`) and streaming (`stream_chain`)
 
 **Analysis Agent** (Intent Parser)
 - Model: Configurable (default: Claude Haiku 4.5)
 - Role: Parse user intent, extract key entities, assess complexity
 - Output: `AnalysisOutput` with structured analysis data
-- Execution: Runs with configurable timeout (default: 15s)
+- Execution: Non-streaming via `ainvoke()` (default timeout: 15s)
 - System Prompt: `src/workflow/prompts/chain_analyze.md`
+- Validation: Intent must be non-empty
 
 **Processing Agent** (Content Generator)
 - Model: Configurable (default: Claude Haiku 4.5)
 - Role: Generate content based on analysis results
 - Output: `ProcessOutput` with generated content and confidence
-- Execution: Runs with configurable timeout (default: 30s)
+- Execution: Non-streaming via `ainvoke()` (default timeout: 30s)
 - System Prompt: `src/workflow/prompts/chain_process.md`
+- Validation: Confidence must be >= 0.5
 
 **Synthesis Agent** (Polish & Format)
 - Model: Configurable (default: Claude Haiku 4.5)
 - Role: Combine and format content into final response
 - Output: `SynthesisOutput` with polished final text
-- Execution: Runs with configurable timeout (default: 20s)
+- Execution: **Streaming via `astream()`** (default timeout: 20s)
 - System Prompt: `src/workflow/prompts/chain_synthesize.md`
+- Streaming: Token-by-token delivery enabled for real-time client responses
 
 ### Performance Characteristics
 
 - **Time Complexity**: O(N) where N = number of sequential steps (typically 3)
 - **Cost Complexity**: O(N) - same token cost as sequential processing
 - **Result**: Enables complex multi-step reasoning with structured outputs
+
+### LangGraph StateGraph & Message Conversion
+
+The workflow leverages LangGraph for robust multi-step orchestration:
+
+**Graph Components** (`src/workflow/chains/graph.py`):
+- `build_chain_graph(config)` - Compiles StateGraph with step nodes and conditional edges
+- `invoke_chain()` - Non-streaming execution for testing and batch processing
+- `stream_chain()` - Streaming execution with AsyncIterator for real-time client responses
+- `error_step()` - Graceful error handling when validation gates fail
+
+**Message Format Bridge** (`src/workflow/utils/message_conversion.py`):
+- `convert_openai_to_langchain_messages()` - Converts incoming OpenAI API format to LangChain
+- `convert_langchain_chunk_to_openai()` - Converts internal LangChain output to OpenAI format
+- Enables OpenAI API compatibility while using LangChain/LangGraph internally
 
 ### Sequential Processing with State Management
 
@@ -325,24 +351,33 @@ This architecture delivers multi-step reasoning benefits:
 - Message accumulation via `add_messages` reducer maintains conversation context
 - Step outputs feed into subsequent steps as structured data
 - Metadata tracking across entire workflow
+- Validation gates route invalid data to error handler
 
 **Flexibility**
 - Each step can use different Claude models (all Haiku, or mix Haiku + Sonnet)
 - Per-step token limits, temperature, and timeout configuration
-- Optional validation gates between steps with configurable strictness
+- Configurable validation gates between steps (can be disabled if needed)
 - Domain-customizable step outputs (AnalysisOutput, ProcessOutput, SynthesisOutput)
+
+**Streaming Integration**
+- Synthesis step uses `astream()` for token-by-token delivery
+- Earlier steps run to completion before synthesis begins streaming
+- Message conversion handles LangChain ↔ OpenAI format translation
+- Server-Sent Events (SSE) format for client-side streaming
 
 **Observability**
 - Independent step execution with per-step logging
 - Token usage tracking across all steps
 - Cost metrics aggregated per request
 - Request ID propagation for distributed tracing
+- Validation gates log warnings on failures
 
 **Real-World Impact**
 - Complex analysis tasks that require multiple reasoning steps
 - Structured outputs enable downstream processing and validation
 - Cost-optimized: Fast Haiku models for all steps, upgrade to Sonnet if needed
 - User experience: Streaming responses maintain perceived responsiveness
+- Error handling: Validation failures handled gracefully without cascading bad data
 
 ## Use Cases
 
@@ -485,17 +520,31 @@ Edit `.env` and `src/workflow/config.py`:
 agentic-service-template/
 ├── src/workflow/
 │   ├── agents/           # Orchestrator and Worker agents
-│   ├── api/             # FastAPI endpoints
-│   ├── models/          # Data models (OpenAI + internal)
-│   ├── prompts/         # System prompts
-│   ├── utils/           # Errors, logging, utilities
-│   ├── config.py        # Configuration management
-│   └── main.py          # FastAPI application
-├── tests/               # Test suite
-├── scripts/             # Development scripts
-├── console_client.py    # Testing client
-└── pyproject.toml       # Dependencies and config
+│   ├── api/              # FastAPI endpoints
+│   ├── chains/           # Prompt-chaining workflow
+│   │   ├── graph.py      # LangGraph StateGraph orchestration
+│   │   ├── steps.py      # Step functions (analyze, process, synthesize)
+│   │   ├── validation.py # Validation gates for data quality
+│   │   └── __init__.py
+│   ├── models/           # Data models (OpenAI + internal + chains)
+│   ├── prompts/          # System prompts (chain_analyze.md, etc.)
+│   ├── utils/            # Errors, logging, utilities
+│   │   ├── message_conversion.py  # OpenAI ↔ LangChain format bridge
+│   │   ├── token_tracking.py      # Cost tracking utilities
+│   │   └── logging.py             # Structured JSON logging
+│   ├── config.py         # Configuration management
+│   └── main.py           # FastAPI application
+├── tests/                # Test suite
+├── scripts/              # Development scripts
+├── console_client.py     # Testing client
+└── pyproject.toml        # Dependencies and config
 ```
+
+**Key Workflow Components**:
+- `chains/graph.py` - LangGraph StateGraph builder with invoke_chain and stream_chain functions
+- `chains/steps.py` - Three step functions (analyze, process, synthesize) orchestrated by graph
+- `chains/validation.py` - Validation gates that route invalid outputs to error handler
+- `utils/message_conversion.py` - Bridges OpenAI and LangChain message formats
 
 ## Development
 
@@ -599,10 +648,30 @@ Critical variables:
 - `JWT_SECRET_KEY` - **Required** for authentication (minimum 32 characters)
 - `JWT_ALGORITHM` - JWT algorithm (default: HS256)
 
-**Models:**
+**Orchestrator Models** (legacy, for backward compatibility):
 - `ORCHESTRATOR_MODEL` - Model for orchestrator (default: claude-sonnet-4-5-20250929)
 - `WORKER_MODEL` - Model for workers (default: claude-haiku-4-5-20251001)
 - `SYNTHESIZER_MODEL` - Model for synthesizer (default: claude-haiku-4-5-20251001)
+
+**Prompt-Chain Step Models** (per-step configuration):
+- `CHAIN_ANALYZE_MODEL` - Model for analysis step (default: claude-haiku-4-5-20251001)
+- `CHAIN_ANALYZE_MAX_TOKENS` - Max tokens for analysis (default: 1000)
+- `CHAIN_ANALYZE_TEMPERATURE` - Temperature for analysis (default: 0.7)
+- `CHAIN_ANALYZE_TIMEOUT` - Analysis timeout in seconds (default: 15, range: 1-270)
+
+- `CHAIN_PROCESS_MODEL` - Model for processing step (default: claude-haiku-4-5-20251001)
+- `CHAIN_PROCESS_MAX_TOKENS` - Max tokens for processing (default: 2000)
+- `CHAIN_PROCESS_TEMPERATURE` - Temperature for processing (default: 0.7)
+- `CHAIN_PROCESS_TIMEOUT` - Processing timeout in seconds (default: 30, range: 1-270)
+
+- `CHAIN_SYNTHESIZE_MODEL` - Model for synthesis step (default: claude-haiku-4-5-20251001)
+- `CHAIN_SYNTHESIZE_MAX_TOKENS` - Max tokens for synthesis (default: 2000)
+- `CHAIN_SYNTHESIZE_TEMPERATURE` - Temperature for synthesis (default: 0.7)
+- `CHAIN_SYNTHESIZE_TIMEOUT` - Synthesis timeout in seconds (default: 20, range: 1-270)
+
+**Prompt-Chain Validation:**
+- `CHAIN_ENABLE_VALIDATION` - Enable validation gates between steps (default: true)
+- `CHAIN_STRICT_VALIDATION` - Fail fast on validation errors vs. warn and continue (default: false)
 
 **Server:**
 - `LOG_LEVEL` - Logging verbosity (DEBUG, INFO, WARNING, ERROR, CRITICAL) - default: INFO

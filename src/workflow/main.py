@@ -17,6 +17,7 @@ from workflow.api.health import router as health_router
 from workflow.api.limiter import limiter
 from workflow.api.v1.chat import router as chat_router
 from workflow.api.v1.models import router as models_router
+from workflow.chains.graph import build_chain_graph
 from workflow.config import Settings
 from workflow.middleware.request_size import request_size_validator
 from workflow.middleware.security_headers import security_headers_middleware
@@ -36,7 +37,7 @@ async def lifespan(app: FastAPI):  # type: ignore
     """
     Manage application lifecycle.
 
-    Handles startup and shutdown events.
+    Handles startup and shutdown events for both orchestrator and chain graph.
 
     Args:
         app: FastAPI application instance
@@ -47,9 +48,35 @@ async def lifespan(app: FastAPI):  # type: ignore
     # Startup
     logger.info("Application starting up")
     try:
+        # Initialize orchestrator for backward compatibility
         orchestrator = app.state.orchestrator
         await orchestrator.initialize()
         logger.info("Orchestrator agent initialized")
+
+        # Initialize chain graph for prompt-chaining workflow
+        try:
+            settings = app.state.settings
+            chain_graph = build_chain_graph(settings.chain_config)
+            app.state.chain_graph = chain_graph
+            logger.info(
+                "LangGraph chain graph initialized and compiled",
+                extra={
+                    "analyze_model": settings.chain_analyze_model,
+                    "process_model": settings.chain_process_model,
+                    "synthesize_model": settings.chain_synthesize_model,
+                },
+            )
+        except Exception as exc:
+            logger.error(
+                "Failed to initialize chain graph",
+                extra={
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                },
+            )
+            # Log error but don't fail startup - allows fallback to orchestrator
+            app.state.chain_graph = None
+
     except Exception as exc:
         logger.critical(
             "Failed to initialize orchestrator - application cannot start",

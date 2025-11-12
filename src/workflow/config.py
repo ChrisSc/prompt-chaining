@@ -5,10 +5,13 @@ This module handles all environment-based configuration for the Template Service
 including API settings, LLM model configuration, and external service connections.
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import Field, HttpUrl, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+if TYPE_CHECKING:
+    from workflow.models.chains import ChainConfig
 
 
 class Settings(BaseSettings):
@@ -35,7 +38,7 @@ class Settings(BaseSettings):
     environment: str = Field(
         default="development",
         description="Deployment environment",
-        pattern="^(development|staging|production)$",
+        pattern="^(development|staging|production|test)$",
     )
 
     # Logging
@@ -252,6 +255,85 @@ class Settings(BaseSettings):
         le=300,
     )
 
+    # Prompt-Chaining Configuration
+    chain_analyze_model: str = Field(
+        default="claude-haiku-4-5-20251001",
+        description="Model ID for the analyze step in prompt-chaining",
+    )
+    chain_analyze_max_tokens: int = Field(
+        default=2048,
+        description="Max tokens for analyze step",
+        ge=1,
+        le=8000,
+    )
+    chain_analyze_temperature: float = Field(
+        default=0.5,
+        description="Temperature for analyze step",
+        ge=0.0,
+        le=2.0,
+    )
+    chain_analyze_timeout: int = Field(
+        default=15,
+        description="Timeout in seconds for analyze step",
+        ge=1,
+        le=270,
+    )
+
+    chain_process_model: str = Field(
+        default="claude-haiku-4-5-20251001",
+        description="Model ID for the process step in prompt-chaining",
+    )
+    chain_process_max_tokens: int = Field(
+        default=2048,
+        description="Max tokens for process step",
+        ge=1,
+        le=8000,
+    )
+    chain_process_temperature: float = Field(
+        default=0.7,
+        description="Temperature for process step",
+        ge=0.0,
+        le=2.0,
+    )
+    chain_process_timeout: int = Field(
+        default=30,
+        description="Timeout in seconds for process step",
+        ge=1,
+        le=270,
+    )
+
+    chain_synthesize_model: str = Field(
+        default="claude-haiku-4-5-20251001",
+        description="Model ID for the synthesize step in prompt-chaining",
+    )
+    chain_synthesize_max_tokens: int = Field(
+        default=2048,
+        description="Max tokens for synthesize step",
+        ge=1,
+        le=8000,
+    )
+    chain_synthesize_temperature: float = Field(
+        default=0.5,
+        description="Temperature for synthesize step",
+        ge=0.0,
+        le=2.0,
+    )
+    chain_synthesize_timeout: int = Field(
+        default=20,
+        description="Timeout in seconds for synthesize step",
+        ge=1,
+        le=270,
+    )
+
+    chain_enable_validation: bool = Field(
+        default=True,
+        description="Enable validation gates between prompt-chaining steps",
+    )
+    chain_strict_validation: bool = Field(
+        default=False,
+        description="Enforce strict validation in prompt-chaining steps",
+    )
+
     @computed_field
     @property
     def base_url(self) -> str:
@@ -297,3 +379,49 @@ class Settings(BaseSettings):
             "format": self.log_format,
             "loki_url": str(self.loki_url) if self.loki_url else None,
         }
+
+    @property
+    def chain_config(self) -> "ChainConfig":
+        """
+        Build and return ChainConfig for the prompt-chaining workflow.
+
+        Constructs a ChainConfig instance from Settings fields, mapping:
+        - Analyze step: chain_analyze_* settings
+        - Process step: chain_process_* settings
+        - Synthesize step: chain_synthesize_* settings
+        - Timeouts and validation gates
+
+        Returns:
+            ChainConfig instance ready for use with build_chain_graph()
+
+        Raises:
+            ImportError: If ChainConfig import fails
+        """
+        # Lazy import to avoid circular dependencies
+        from workflow.models.chains import ChainConfig, ChainStepConfig
+
+        return ChainConfig(
+            analyze=ChainStepConfig(
+                model=self.chain_analyze_model,
+                max_tokens=self.chain_analyze_max_tokens,
+                temperature=self.chain_analyze_temperature,
+                system_prompt_file="chain_analyze.md",
+            ),
+            process=ChainStepConfig(
+                model=self.chain_process_model,
+                max_tokens=self.chain_process_max_tokens,
+                temperature=self.chain_process_temperature,
+                system_prompt_file="chain_process.md",
+            ),
+            synthesize=ChainStepConfig(
+                model=self.chain_synthesize_model,
+                max_tokens=self.chain_synthesize_max_tokens,
+                temperature=self.chain_synthesize_temperature,
+                system_prompt_file="chain_synthesize.md",
+            ),
+            analyze_timeout=self.chain_analyze_timeout,
+            process_timeout=self.chain_process_timeout,
+            synthesize_timeout=self.chain_synthesize_timeout,
+            enable_validation=self.chain_enable_validation,
+            strict_validation=self.chain_strict_validation,
+        )

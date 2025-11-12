@@ -161,9 +161,35 @@ docker-compose exec orchestrator-worker python -m pytest tests/ -v
 
 ### Prompt-Chaining Pattern
 
+#### LangGraph StateGraph Orchestration
+
+The prompt-chaining pattern is orchestrated by LangGraph StateGraph in `src/workflow/chains/graph.py`:
+
+**Graph Builder** (`build_chain_graph(config: ChainConfig)`)
+- Location: `src/workflow/chains/graph.py`
+- Creates a compiled StateGraph with 4 nodes: analyze, process, synthesize, error
+- Graph flow: START → analyze → (validation gate) → process → (validation gate) → synthesize → END
+- Error handling: Invalid outputs route to error_step which returns graceful error messages
+- Configuration: Takes `ChainConfig` with model selection, token limits, and per-step timeouts
+- Returns: Compiled graph ready for async streaming/non-streaming execution
+
+**Execution Modes**:
+1. **invoke_chain(graph, initial_state, config)** - Non-streaming execution via `graph.ainvoke()`
+   - Returns complete final ChainState after all steps execute
+   - Useful for testing, batch processing, or scenarios without client streaming
+2. **stream_chain(graph, initial_state, config)** - Streaming execution via `graph.astream()`
+   - AsyncIterator interface yields state updates as they arrive
+   - Synthesize step yields token-by-token updates during streaming
+   - Enables real-time streaming to client via SSE
+
+**Message Conversion** (`src/workflow/utils/message_conversion.py`)
+- `convert_openai_to_langchain_messages()`: OpenAI ChatMessage → LangChain BaseMessage (for input)
+- `convert_langchain_chunk_to_openai()`: LangChain output → OpenAI ChatCompletionChunk (for output)
+- Enables seamless integration between OpenAI-compatible API and LangChain/LangGraph internals
+
 #### Step Functions Implementation
 
-The prompt-chaining pattern is implemented through three async step functions in `src/workflow/chains/steps.py`:
+The three step functions in `src/workflow/chains/steps.py` are orchestrated by the LangGraph StateGraph:
 
 **Step 1: Analyze Step** (`analyze_step()`)
 - Location: `src/workflow/chains/steps.py`
@@ -173,6 +199,7 @@ The prompt-chaining pattern is implemented through three async step functions in
 - Output: `AnalysisOutput` (intent, key_entities, complexity, context)
 - System prompt: `src/workflow/prompts/chain_analyze.md`
 - Token tracking: Extracts usage metadata, calculates cost, logs at INFO level
+- Validation: `should_proceed_to_process()` gate routes to error if intent empty
 
 **Step 2: Process Step** (`process_step()`)
 - Location: `src/workflow/chains/steps.py`
@@ -182,6 +209,7 @@ The prompt-chaining pattern is implemented through three async step functions in
 - Output: `ProcessOutput` (content, confidence, metadata)
 - System prompt: `src/workflow/prompts/chain_process.md`
 - Token tracking: Extracts usage metadata, logs confidence score and content length
+- Validation: `should_proceed_to_synthesize()` gate routes to error if confidence < 0.5
 
 **Step 3: Synthesize Step** (`synthesize_step()`)
 - Location: `src/workflow/chains/steps.py`
@@ -191,6 +219,7 @@ The prompt-chaining pattern is implemented through three async step functions in
 - Output: `SynthesisOutput` (final_text, formatting)
 - System prompt: `src/workflow/prompts/chain_synthesize.md`
 - Token tracking: Extracts usage from final chunk, logs formatting style
+- Streaming: Only this step yields incremental updates; earlier steps run to completion
 
 #### Configuration
 
@@ -293,15 +322,34 @@ When triggered by LangGraph StateGraph:
 - Enables fast failure on quality issues without cascading bad data through workflow
 
 ### Orchestration via LangGraph
-- Uses LangGraph StateGraph for sequential step execution
-- State flows through ChainState TypedDict with add_messages reducer
-- Validation gates between steps (configurable strictness)
-- Step-specific timeouts for each phase
+
+**Graph Structure** (`src/workflow/chains/graph.py`):
+- `build_chain_graph(config: ChainConfig)` compiles StateGraph with config-driven timeouts
+- Nodes: analyze, process, synthesize, error - each with own model and token limits
+- Conditional edges: Validation gates route invalid outputs to error handler
+- State management: ChainState TypedDict with add_messages reducer maintains message history
+- Error step: Captures validation failures, logs warnings, returns user-friendly error messages
+
+**Execution Flow**:
+1. START triggers analyze_step (non-streaming, ~1-2s on Haiku)
+2. Validation gate checks analysis intent is non-empty
+3. process_step generates content (non-streaming, ~2-4s on Haiku)
+4. Validation gate checks confidence >= 0.5
+5. synthesize_step polishes response (STREAMING, ~1-2s on Haiku)
+6. State flows through with add_messages reducer merging all step outputs
+7. Both success and error paths terminate at END node
+
+**Streaming Integration**:
+- `stream_chain()` uses `graph.astream(stream_mode="messages")` for token-level updates
+- Synthesis step's astream() enables incremental token delivery to client
+- Earlier steps complete before yielding; synthesis step yields per-token
+- FastAPI endpoint converts LangChain chunks to OpenAI SSE format via message_conversion.py
 
 ### Performance
 - Time complexity: O(N) where N = number of sequential steps (typically 3)
 - Cost: O(N) same as sequential processing
-- Result: Enables complex multi-step reasoning with structured outputs
+- Typical execution: ~4-8 seconds total (1-2s analyze + 2-4s process + 1-2s synthesize)
+- Result: Enables complex multi-step reasoning with structured outputs and streaming responses
 
 ### Import System
 Use relative imports only (required for FastAPI CLI discovery):

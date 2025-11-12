@@ -3,6 +3,7 @@
 import asyncio
 import json
 import time
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -10,9 +11,14 @@ from fastapi.responses import StreamingResponse
 from workflow.agents.orchestrator import Orchestrator
 from workflow.api.dependencies import verify_bearer_token
 from workflow.api.limiter import limiter
+from workflow.chains.graph import stream_chain
 from workflow.models.openai import ChatCompletionRequest
 from workflow.utils.errors import ExternalServiceError, StreamingTimeoutError
 from workflow.utils.logging import get_logger
+from workflow.utils.message_conversion import (
+    convert_langchain_chunk_to_openai,
+    convert_openai_to_langchain_messages,
+)
 
 logger = get_logger(__name__)
 
@@ -51,12 +57,38 @@ async def get_orchestrator(request: Request) -> Orchestrator:
     return agent
 
 
+async def get_chain_graph(request: Request) -> Any:
+    """
+    Dependency to get the compiled LangGraph chain graph from app state.
+
+    Returns the chain graph if available and initialized, otherwise None
+    to allow fallback to orchestrator mode.
+
+    Args:
+        request: FastAPI request object
+
+    Returns:
+        Compiled LangGraph StateGraph or None if not available
+
+    Raises:
+        HTTPException: If service is not ready
+    """
+    # Check if chain graph is available
+    chain_graph = getattr(request.app.state, "chain_graph", None)
+
+    if chain_graph is None:
+        logger.debug("Chain graph not available, will fall back to orchestrator mode")
+
+    return chain_graph
+
+
 @router.post("/chat/completions")
 @limiter.limit("10/minute")
 async def create_chat_completion(
     request: Request,
     request_data: ChatCompletionRequest,
     orchestrator: Orchestrator = Depends(get_orchestrator),
+    chain_graph: Any = Depends(get_chain_graph),
     token: dict = Depends(verify_bearer_token),
 ):
     """
@@ -163,14 +195,57 @@ async def create_chat_completion(
     async def event_generator():
         """Generate SSE events from streaming chunks."""
         try:
-            logger.debug("Starting streaming response generation")
+            logger.debug(
+                "Starting streaming response generation",
+                extra={"use_chain_graph": chain_graph is not None},
+            )
             chunk_count = 0
 
-            async for chunk in orchestrator.process(request_data):
-                # Format as Server-Sent Event
-                chunk_json = chunk.model_dump_json()
-                yield f"data: {chunk_json}\n\n"
-                chunk_count += 1
+            # Use chain graph if available, otherwise fall back to orchestrator
+            if chain_graph is not None:
+                # Use prompt-chaining workflow via LangGraph
+                logger.debug("Using LangGraph chain graph for streaming")
+
+                # Convert OpenAI messages to LangChain format
+                langchain_messages = convert_openai_to_langchain_messages(request_data.messages)
+
+                # Build initial state for the chain
+                initial_state = {
+                    "messages": langchain_messages,
+                    "analysis": None,
+                    "processed_content": None,
+                    "final_response": None,
+                    "step_metadata": {},
+                }
+
+                # Stream the chain execution
+                settings = request.app.state.settings
+                async for state_update in stream_chain(
+                    chain_graph, initial_state, settings.chain_config
+                ):
+                    # Extract content from the state update and convert to OpenAI format
+                    try:
+                        chunk = convert_langchain_chunk_to_openai(state_update)
+                        chunk_json = chunk.model_dump_json()
+                        yield f"data: {chunk_json}\n\n"
+                        chunk_count += 1
+                    except Exception as chunk_error:
+                        logger.warning(
+                            "Failed to convert chain state to OpenAI format",
+                            extra={"error": str(chunk_error)},
+                        )
+                        # Continue processing despite conversion error
+                        continue
+
+            else:
+                # Fall back to orchestrator for backward compatibility
+                logger.debug("Using orchestrator agent for streaming (chain graph not available)")
+
+                async for chunk in orchestrator.process(request_data):
+                    # Format as Server-Sent Event
+                    chunk_json = chunk.model_dump_json()
+                    yield f"data: {chunk_json}\n\n"
+                    chunk_count += 1
 
             # Send final [DONE] marker
             yield "data: [DONE]\n\n"
@@ -183,6 +258,7 @@ async def create_chat_completion(
                     "model": request_data.model,
                     "elapsed_seconds": elapsed_time,
                     "chunk_count": chunk_count,
+                    "mode": "chain_graph" if chain_graph is not None else "orchestrator",
                 },
             )
             logger.debug(
