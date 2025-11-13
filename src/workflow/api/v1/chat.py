@@ -249,56 +249,9 @@ async def create_chat_completion(
                         if isinstance(step_metadata, dict):
                             final_step_metadata.update(step_metadata)
 
-                # Special handling for synthesize node - only if we didn't get streaming tokens
-                # If synthesize_tokens was present, skip this block since tokens were already emitted
-                if "synthesize" in state_update and "synthesize_tokens" not in state_update:
-                    try:
-                        final_response = state_update.get("synthesize", {}).get(
-                            "final_response", ""
-                        )
-                        if final_response:
-                            # Fallback: split response into chunks for progressive streaming
-                            # This handles cases where custom streaming didn't occur
-                            response_chunks = split_response_into_chunks(
-                                final_response, chunk_size=50
-                            )
-
-                            for chunk_text in response_chunks:
-                                # Create ChatCompletionChunk for each progressive chunk
-                                chunk = ChatCompletionChunk(
-                                    id=f"chatcmpl-{int(time.time() * 1000)}",
-                                    object="chat.completion.chunk",
-                                    created=int(time.time()),
-                                    model=request_data.model,
-                                    choices=[
-                                        ChatCompletionStreamChoice(
-                                            index=0,
-                                            delta=ChoiceDelta(
-                                                role=MessageRole.ASSISTANT,
-                                                content=chunk_text,
-                                            ),
-                                            finish_reason=None,
-                                        )
-                                    ],
-                                )
-                                yield f"data: {chunk.model_dump_json()}\n\n"
-                                chunk_count += 1
-
-                            logger.debug(
-                                "Split synthesize response into progressive chunks (fallback)",
-                                extra={
-                                    "response_length": len(final_response),
-                                    "chunk_count": len(response_chunks),
-                                },
-                            )
-                            # Skip normal conversion since we handled synthesize specially
-                            continue
-                    except Exception as chunk_error:
-                        logger.warning(
-                            "Failed to process synthesize node for progressive streaming",
-                            extra={"error": str(chunk_error)},
-                        )
-                        # Fall through to normal conversion as fallback
+                # Note: Custom token streaming via get_stream_writer() in synthesize_step
+                # should emit "synthesize_tokens" events above
+                # If those aren't present, it means streaming context wasn't available
 
                 # Skip convert_langchain_chunk_to_openai if we already handled this state update
                 if "synthesize_tokens" in state_update or "synthesize" in state_update:

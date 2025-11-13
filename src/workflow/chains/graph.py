@@ -24,6 +24,7 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
@@ -119,6 +120,9 @@ def build_chain_graph(config: ChainConfig) -> Any:
         },
     )
 
+    # Save ChainConfig in a variable to avoid shadowing when we declare LangGraph's config parameter
+    chain_config = config
+
     # Create StateGraph with ChainState
     graph = StateGraph(ChainState)
 
@@ -126,16 +130,19 @@ def build_chain_graph(config: ChainConfig) -> Any:
     # Create wrapper functions that LangGraph can properly invoke
     # LangGraph will detect these are async and handle them correctly
     async def analyze_wrapper(state: ChainState) -> dict[str, Any]:
-        return await analyze_step(state, config)
+        return await analyze_step(state, chain_config)
 
     async def process_wrapper(state: ChainState) -> dict[str, Any]:
-        return await process_step(state, config)
+        return await process_step(state, chain_config)
 
-    async def synthesize_wrapper(state: ChainState, runnable_config: Any = None) -> dict[str, Any]:
-        return await synthesize_step(state, runnable_config, config)
+    async def synthesize_wrapper(state: ChainState, config: RunnableConfig) -> dict[str, Any]:
+        # Note: Parameter named 'config' receives RunnableConfig from LangGraph
+        # This enables get_stream_writer() to work properly for custom token streaming
+        # chain_config is captured from the closure and contains our ChainConfig
+        return await synthesize_step(state, config, chain_config)
 
     async def error_wrapper(state: ChainState) -> dict[str, Any]:
-        return await error_step(state, config)
+        return await error_step(state, chain_config)
 
     graph.add_node("analyze", analyze_wrapper)
     graph.add_node("process", process_wrapper)
@@ -301,6 +308,15 @@ async def stream_chain(
         ):
             # With multiple stream_mode values, events are tuples: (mode, chunk)
             mode, chunk = event if isinstance(event, tuple) and len(event) == 2 else (None, event)
+
+            if mode == "custom":
+                logger.info(
+                    "Received custom stream event",
+                    extra={
+                        "mode": mode,
+                        "chunk_keys": list(chunk.keys()) if isinstance(chunk, dict) else type(chunk).__name__,
+                    },
+                )
 
             # Handle "updates" mode: state updates from nodes
             if mode == "updates" and isinstance(chunk, dict):

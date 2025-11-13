@@ -447,6 +447,16 @@ async def synthesize_step(
         # Per LangGraph documentation, this works inside graph nodes to emit custom data
         writer = get_stream_writer()
 
+        logger.info(
+            "Stream writer obtained",
+            extra={
+                "step": "synthesize",
+                "writer_is_none": writer is None,
+                "writer_callable": callable(writer),
+                "runnable_config_is_none": runnable_config is None,
+            },
+        )
+
         # Stream from Claude and accumulate response while emitting tokens
         final_response = ""
         total_input_tokens = 0
@@ -455,13 +465,35 @@ async def synthesize_step(
         # Use Claude's stream API to get tokens progressively
         # Pattern from documentation: ./documentation/langchain/oss/python/langgraph/streaming.md lines 559-676
         # astream yields AIMessageChunk objects with token content
-        async for chunk in llm.astream(messages):
+        # Pass runnable_config to ensure proper context propagation for get_stream_writer()
+        async for chunk in llm.astream(messages, config=runnable_config):
             # Extract token from chunk
             token = chunk.content if chunk.content else ""
             if token:
                 final_response += token
                 # Emit token via stream writer for "custom" mode streaming
-                writer({"type": "token", "content": token})
+                if writer is not None:
+                    try:
+                        writer({"type": "token", "content": token})
+                        logger.info(
+                            "Wrote token to stream",
+                            extra={
+                                "step": "synthesize",
+                                "token_length": len(token),
+                            },
+                        )
+                    except Exception as write_error:
+                        logger.warning(
+                            "Failed to write token via stream writer",
+                            extra={
+                                "step": "synthesize",
+                                "error": str(write_error),
+                            },
+                        )
+                        # Continue processing despite write error
+                        pass
+                else:
+                    logger.info("Writer is None, skipping token emission")
 
             # Capture token usage from response metadata
             # Usage is typically only populated on the final chunk
