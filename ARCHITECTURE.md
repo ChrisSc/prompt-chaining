@@ -368,15 +368,24 @@ The prompt-chaining workflow uses three specialized system prompts that control 
 
 **Input**: ProcessOutput from processing step
 
-**Output**: SynthesisOutput JSON with:
-- `final_text`: Polished and formatted response
-- `formatting`: Applied formatting style or approach
+**Output**: Clean formatted text (markdown, plain text, or structured format)
+- Streamed directly to client without JSON wrapping
+- Internal SynthesisOutput model wraps text for state tracking:
+  - `final_text`: Polished and formatted response
+  - `formatting`: Detected formatting style (markdown, plain, structured)
 
-**Example Output**:
+**Example Output** (streamed to client):
+```markdown
+# Synchronous vs Asynchronous Python
+
+Synchronous code blocks execute one statement at a time...
+```
+
+**Internal State** (SynthesisOutput model):
 ```json
 {
   "final_text": "# Synchronous vs Asynchronous Python\n\nSynchronous code blocks...",
-  "formatting": "markdown with clear sections and examples"
+  "formatting": "markdown"
 }
 ```
 

@@ -97,7 +97,7 @@ def run_benchmark_request(
     }
 
     payload = {
-        "model": "orchestrator-worker",
+        "model": "prompt-chaining",
         "messages": [{"role": "user", "content": message}],
     }
 

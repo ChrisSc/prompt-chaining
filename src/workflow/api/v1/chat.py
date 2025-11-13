@@ -11,12 +11,19 @@ from fastapi.responses import StreamingResponse
 from workflow.api.dependencies import verify_bearer_token
 from workflow.api.limiter import limiter
 from workflow.chains.graph import stream_chain
-from workflow.models.openai import ChatCompletionRequest
+from workflow.models.openai import (
+    ChatCompletionChunk,
+    ChatCompletionRequest,
+    ChatCompletionStreamChoice,
+    ChoiceDelta,
+    MessageRole,
+)
 from workflow.utils.errors import ExternalServiceError, StreamingTimeoutError
 from workflow.utils.logging import get_logger
 from workflow.utils.message_conversion import (
     convert_langchain_chunk_to_openai,
     convert_openai_to_langchain_messages,
+    split_response_into_chunks,
 )
 from workflow.utils.token_tracking import aggregate_step_metrics
 
@@ -196,16 +203,67 @@ async def create_chat_completion(
             async for state_update in stream_chain(
                 chain_graph, initial_state, settings.chain_config
             ):
-                # Capture step metadata for aggregation
-                if "step_metadata" in state_update:
-                    final_step_metadata.update(state_update.get("step_metadata", {}))
+                # Handle synthesize_tokens events from custom streaming
+                # These are individual tokens emitted by synthesize_step via get_stream_writer()
+                if "synthesize_tokens" in state_update:
+                    try:
+                        token_event = state_update.get("synthesize_tokens", {})
+                        if isinstance(token_event, dict):
+                            token_type = token_event.get("type")
+                            token_content = token_event.get("content", "")
 
-                # Extract content from the state update and convert to OpenAI format
+                            # Only emit non-empty tokens
+                            if token_type == "token" and token_content:
+                                # Create ChatCompletionChunk for this token
+                                chunk = ChatCompletionChunk(
+                                    id=f"chatcmpl-{int(time.time() * 1000)}",
+                                    object="chat.completion.chunk",
+                                    created=int(time.time()),
+                                    model=request_data.model,
+                                    choices=[
+                                        ChatCompletionStreamChoice(
+                                            index=0,
+                                            delta=ChoiceDelta(
+                                                role=MessageRole.ASSISTANT,
+                                                content=token_content,
+                                            ),
+                                            finish_reason=None,
+                                        )
+                                    ],
+                                )
+                                yield f"data: {chunk.model_dump_json()}\n\n"
+                                chunk_count += 1
+                    except Exception as token_error:
+                        logger.warning(
+                            "Failed to process token event",
+                            extra={"error": str(token_error)},
+                        )
+                        # Continue processing despite error
+                        continue
+
+                # Capture step metadata for aggregation
+                # state_update structure: {"node_name": {"analysis": {...}, "step_metadata": {...}, ...}}
+                for node_name, node_update in state_update.items():
+                    if isinstance(node_update, dict):
+                        step_metadata = node_update.get("step_metadata", {})
+                        if isinstance(step_metadata, dict):
+                            final_step_metadata.update(step_metadata)
+
+                # Note: Custom token streaming via get_stream_writer() in synthesize_step
+                # should emit "synthesize_tokens" events above
+                # If those aren't present, it means streaming context wasn't available
+
+                # Skip convert_langchain_chunk_to_openai if we already handled this state update
+                if "synthesize_tokens" in state_update or "synthesize" in state_update:
+                    continue
+
+                # Extract content from the state update and convert to OpenAI format (for analyze/process nodes)
                 try:
                     chunk = convert_langchain_chunk_to_openai(state_update)
-                    chunk_json = chunk.model_dump_json()
-                    yield f"data: {chunk_json}\n\n"
-                    chunk_count += 1
+                    if chunk.choices[0].delta.content:  # Only yield if has content
+                        chunk_json = chunk.model_dump_json()
+                        yield f"data: {chunk_json}\n\n"
+                        chunk_count += 1
                 except Exception as chunk_error:
                     logger.warning(
                         "Failed to convert chain state to OpenAI format",
@@ -222,7 +280,9 @@ async def create_chat_completion(
 
             # Calculate aggregated metrics from step metadata
             if final_step_metadata:
-                total_tokens, total_cost_usd, aggregated_elapsed = aggregate_step_metrics(final_step_metadata)
+                total_tokens, total_cost_usd, aggregated_elapsed = aggregate_step_metrics(
+                    final_step_metadata
+                )
             else:
                 total_tokens, total_cost_usd, aggregated_elapsed = 0, 0.0, 0.0
 

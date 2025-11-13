@@ -20,9 +20,11 @@ Components:
 
 import asyncio
 import time
+import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
@@ -118,18 +120,38 @@ def build_chain_graph(config: ChainConfig) -> Any:
         },
     )
 
+    # Save ChainConfig in a variable to avoid shadowing when we declare LangGraph's config parameter
+    chain_config = config
+
     # Create StateGraph with ChainState
     graph = StateGraph(ChainState)
 
     # Add nodes for each step
-    # Use lambda to capture config in closure
-    graph.add_node("analyze", lambda state: analyze_step(state, config))
-    graph.add_node("process", lambda state: process_step(state, config))
+    # Create wrapper functions that LangGraph can properly invoke
+    # LangGraph will detect these are async and handle them correctly
+    async def analyze_wrapper(state: ChainState) -> dict[str, Any]:
+        return await analyze_step(state, chain_config)
 
-    # Note: synthesize_step is an async generator for streaming
-    # LangGraph will handle this properly when used with astream()
-    graph.add_node("synthesize", lambda state: synthesize_step(state, config))
-    graph.add_node("error", lambda state: error_step(state, config))
+    async def process_wrapper(state: ChainState) -> dict[str, Any]:
+        return await process_step(state, chain_config)
+
+    async def synthesize_wrapper(state: ChainState, config: RunnableConfig) -> dict[str, Any]:
+        # Note: Parameter named 'config' receives RunnableConfig from LangGraph
+        # This enables get_stream_writer() to work properly for custom token streaming
+        # chain_config is captured from the closure and contains our ChainConfig
+        return await synthesize_step(state, config, chain_config)
+
+    async def error_wrapper(state: ChainState) -> dict[str, Any]:
+        return await error_step(state, chain_config)
+
+    graph.add_node("analyze", analyze_wrapper)
+    graph.add_node("process", process_wrapper)
+
+    # synthesize_step: Returns a single dict (not a generator) for LangGraph compatibility.
+    # Streaming for HTTP SSE responses is handled at the FastAPI endpoint level.
+    # See stream_chain() in this module for how synthesis output is streamed to clients.
+    graph.add_node("synthesize", synthesize_wrapper)
+    graph.add_node("error", error_wrapper)
 
     # Add START edge to analyze
     graph.add_edge(START, "analyze")
@@ -238,12 +260,14 @@ async def stream_chain(
     Stream the prompt-chaining graph execution with async generator interface.
 
     Executes the graph with streaming enabled (astream), yielding state updates
-    for each step. This enables token-by-token delivery to the client during
-    the synthesis step while maintaining proper state management through all steps.
+    from each step. All steps (analyze, process, synthesize) are non-streaming
+    at the LangGraph node level and return single dictionaries. State updates are
+    yielded for each step completion.
 
-    The synthesize step is the primary streaming phase - it uses astream internally
-    and yields incremental text updates. Earlier steps (analyze, process) are
-    non-streaming but their state updates are also yielded.
+    Streaming for HTTP SSE delivery to clients happens at the FastAPI endpoint
+    level, where final_response is streamed back to users. This architecture
+    ensures LangGraph nodes follow the single-dict-return pattern while still
+    supporting streaming responses to end users.
 
     Args:
         graph: Compiled LangGraph StateGraph
@@ -267,29 +291,55 @@ async def stream_chain(
 
     start_time = time.time()
     accumulated_metadata = {}
-    final_state = None
 
     try:
-        # Stream graph execution with message-level streaming
-        # This uses stream_mode="messages" to get token-level updates during synthesis
-        async for event in await graph.astream(
+        # Stream graph execution with both state updates and custom token streaming
+        # Uses stream_mode=["updates", "custom"] to yield both state updates AND custom tokens
+        # from the synthesize step. Events are tuples of (mode, chunk) when using multiple modes.
+        # References:
+        # - ./documentation/langchain/oss/python/langgraph/streaming.md lines 75-84 "Stream multiple modes"
+        # - synthesize_step emits tokens via get_stream_writer() for "custom" mode
+        thread_id = str(uuid.uuid4())
+
+        async for event in graph.astream(
             initial_state,
-            stream_mode="messages",
+            config={"configurable": {"thread_id": thread_id}},
+            stream_mode=["updates", "custom"],
         ):
-            # Each event is a state update
-            # The synthesize step yields incremental updates during streaming
-            if isinstance(event, dict):
-                # Accumulate metadata across steps
-                if "step_metadata" in event:
-                    step_metadata = event.get("step_metadata", {})
-                    if isinstance(step_metadata, dict):
-                        accumulated_metadata.update(step_metadata)
+            # With multiple stream_mode values, events are tuples: (mode, chunk)
+            mode, chunk = event if isinstance(event, tuple) and len(event) == 2 else (None, event)
 
-                # Store final state for metrics aggregation
-                final_state = event
+            if mode == "custom":
+                logger.info(
+                    "Received custom stream event",
+                    extra={
+                        "mode": mode,
+                        "chunk_keys": list(chunk.keys()) if isinstance(chunk, dict) else type(chunk).__name__,
+                    },
+                )
 
-                # Yield the state update
-                yield event
+            # Handle "updates" mode: state updates from nodes
+            if mode == "updates" and isinstance(chunk, dict):
+                # Extract step_metadata from the node update
+                # With stream_mode="updates", chunk structure is:
+                # {"node_name": {"analysis": {...}, "step_metadata": {...}, ...}}
+                for node_name, node_update in chunk.items():
+                    if isinstance(node_update, dict):
+                        # Accumulate metadata across steps
+                        step_metadata = node_update.get("step_metadata", {})
+                        if isinstance(step_metadata, dict):
+                            accumulated_metadata.update(step_metadata)
+
+                # Yield the state update as-is for backward compatibility
+                # API endpoint will handle state updates normally
+                yield chunk
+
+            # Handle "custom" mode: token chunks from stream_writer in synthesize_step
+            elif mode == "custom" and isinstance(chunk, dict):
+                # Token chunks are dictionaries like {"type": "token", "content": "..."}
+                # Wrap in an event structure so API endpoint can identify them
+                # Using a synthesize wrapper to signal these are custom tokens
+                yield {"synthesize_tokens": chunk}
 
         elapsed_time = time.time() - start_time
 

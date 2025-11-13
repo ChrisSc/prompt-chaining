@@ -16,12 +16,13 @@ of each step. Token usage and costs are tracked throughout execution.
 
 import json
 import time
-from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
+from langgraph.config import get_stream_writer
 from pydantic import ValidationError
 
 from workflow.models.chains import (
@@ -359,31 +360,43 @@ async def process_step(state: ChainState, config: ChainConfig) -> dict[str, Any]
         raise
 
 
-async def synthesize_step(state: ChainState, config: ChainConfig) -> AsyncIterator[dict[str, Any]]:
+async def synthesize_step(
+    state: ChainState,
+    runnable_config: RunnableConfig,
+    chain_config: ChainConfig,
+) -> dict[str, Any]:
     """
-    Synthesis step: Polish and format the final response (streaming).
+    Synthesis step: Polish and format the final response with token streaming.
 
     This is the final step in the prompt-chaining workflow. It takes the processed
     content from the previous step and transforms it into a polished, professionally
     formatted response optimized for readability and delivery.
 
-    Unlike the other steps, this step uses streaming (astream) to incrementally
-    yield response chunks, enabling real-time delivery to the user.
+    This step uses Claude's streaming API to emit tokens progressively via LangGraph's
+    get_stream_writer() function. The stream writer enables "custom" mode streaming to
+    the HTTP endpoint for real-time token delivery. Still returns a complete dict to
+    LangGraph for state management compatibility.
+
+    References:
+    - ./documentation/langchain/oss/python/langgraph/streaming.md "Stream custom data" section
+    - ./documentation/langchain/oss/python/langgraph/streaming.md "Use with any LLM" section
+    - Extended example at lines 559-676 for streaming arbitrary chat models pattern
 
     Args:
         state: Current ChainState containing processed content and messages
-        config: ChainConfig with model selection, token limits, and timeouts
+        runnable_config: RunnableConfig from LangGraph for proper streaming context propagation
+        chain_config: ChainConfig with model selection, token limits, and timeouts
 
-    Yields:
-        Dictionary with state updates for each chunk:
-        - final_response: Accumulated text from streaming chunks
-        - messages: Appended response chunks
-        - step_metadata: Tracking info (tokens, cost, duration)
+    Returns:
+        Dictionary with state updates:
+        - final_response: Complete synthesized text
+        - synthesis_output: SynthesisOutput with formatting details
+        - step_metadata: Complete tracking info (tokens, cost, duration)
 
     Raises:
-        ValidationError: If the final accumulated response doesn't conform to SynthesisOutput
-        FileNotFoundError: If the system prompt file is not found
         ValueError: If processed_content is not available in state
+        FileNotFoundError: If the system prompt file is not found
+        Exception: On API or processing errors
     """
     start_time = time.time()
 
@@ -393,7 +406,7 @@ async def synthesize_step(state: ChainState, config: ChainConfig) -> AsyncIterat
         raise ValueError("Processed content not found in state for synthesis step")
 
     # Load system prompt
-    system_prompt = load_system_prompt(config.synthesize.system_prompt_file)
+    system_prompt = load_system_prompt(chain_config.synthesize.system_prompt_file)
 
     # Build synthesis prompt from processed content
     if isinstance(processed_content, dict):
@@ -416,12 +429,11 @@ async def synthesize_step(state: ChainState, config: ChainConfig) -> AsyncIterat
         f"Produce a polished, formatted final response."
     )
 
-    # Initialize ChatAnthropic client with streaming enabled
+    # Initialize ChatAnthropic client for streaming
     llm = ChatAnthropic(
-        model=config.synthesize.model,
-        temperature=config.synthesize.temperature,
-        max_tokens=config.synthesize.max_tokens,
-        streaming=True,
+        model=chain_config.synthesize.model,
+        temperature=chain_config.synthesize.temperature,
+        max_tokens=chain_config.synthesize.max_tokens,
     )
 
     # Prepare messages for LLM
@@ -431,65 +443,106 @@ async def synthesize_step(state: ChainState, config: ChainConfig) -> AsyncIterat
     ]
 
     try:
-        accumulated_text = ""
+        # Get the stream writer for custom token streaming
+        # Per LangGraph documentation, this works inside graph nodes to emit custom data
+        writer = get_stream_writer()
+
+        logger.info(
+            "Stream writer obtained",
+            extra={
+                "step": "synthesize",
+                "writer_is_none": writer is None,
+                "writer_callable": callable(writer),
+                "runnable_config_is_none": runnable_config is None,
+            },
+        )
+
+        # Stream from Claude and accumulate response while emitting tokens
+        final_response = ""
         total_input_tokens = 0
         total_output_tokens = 0
 
-        # Stream response from LLM
-        async for chunk in await llm.astream(messages):
-            # Extract text content from chunk
-            chunk_text = chunk.content if hasattr(chunk, "content") else str(chunk)
+        # Use Claude's stream API to get tokens progressively
+        # Pattern from documentation: ./documentation/langchain/oss/python/langgraph/streaming.md lines 559-676
+        # astream yields AIMessageChunk objects with token content
+        # Pass runnable_config to ensure proper context propagation for get_stream_writer()
+        async for chunk in llm.astream(messages, config=runnable_config):
+            # Extract token from chunk
+            token = chunk.content if chunk.content else ""
+            if token:
+                final_response += token
+                # Emit token via stream writer for "custom" mode streaming
+                if writer is not None:
+                    try:
+                        writer({"type": "token", "content": token})
+                        logger.info(
+                            "Wrote token to stream",
+                            extra={
+                                "step": "synthesize",
+                                "token_length": len(token),
+                            },
+                        )
+                    except Exception as write_error:
+                        logger.warning(
+                            "Failed to write token via stream writer",
+                            extra={
+                                "step": "synthesize",
+                                "error": str(write_error),
+                            },
+                        )
+                        # Continue processing despite write error
+                        pass
+                else:
+                    logger.info("Writer is None, skipping token emission")
 
-            # Accumulate text for final response
-            accumulated_text += chunk_text
-
-            # Extract token usage from chunk if available (typically only on final chunk)
+            # Capture token usage from response metadata
+            # Usage is typically only populated on the final chunk
             if hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
                 total_input_tokens = chunk.usage_metadata.get("input_tokens", 0)
                 total_output_tokens = chunk.usage_metadata.get("output_tokens", 0)
 
-            # Yield incremental state update
-            yield {
-                "final_response": accumulated_text,
-                "messages": [chunk],  # Append chunk to messages
-                "step_metadata": {
-                    "synthesize": {
-                        "elapsed_seconds": time.time() - start_time,
-                        "accumulated_output": len(accumulated_text),
-                    }
-                },
-            }
+        # Create SynthesisOutput from clean markdown response
+        # The final_response is already clean formatted markdown/text (no JSON wrapper)
+        # Detect formatting based on content characteristics
+        response_text = final_response.strip()
 
-        # Parse final accumulated text into SynthesisOutput
+        # Simple heuristic to detect formatting style:
+        # - If contains markdown headers (#, ##, ###), treat as markdown
+        # - If contains numbered/bullet lists with specific patterns, detect accordingly
+        # - Default to markdown for modern rich formatting
+        if "#" in response_text and ("\n" in response_text or "##" in response_text):
+            detected_formatting = "markdown"
+        elif any(response_text.startswith(f"{i}.") for i in range(1, 10)):
+            detected_formatting = "structured"
+        elif "  -" in response_text or "\n-" in response_text:
+            detected_formatting = "markdown"
+        else:
+            # Default to markdown for clean, modern formatting
+            detected_formatting = "markdown"
+
         try:
-            # Remove markdown code blocks if present
-            response_text = accumulated_text
-            if response_text.startswith("```"):
-                response_text = response_text.split("```")[1]
-                if response_text.startswith("json"):
-                    response_text = response_text[4:]
-
-            synthesis_dict = json.loads(response_text.strip())
-            synthesis_output = SynthesisOutput(**synthesis_dict)
-
-        except (json.JSONDecodeError, ValidationError) as e:
-            logger.warning(
-                "Failed to parse synthesis step response as JSON, using accumulated text",
+            synthesis_output = SynthesisOutput(
+                final_text=response_text,
+                formatting=detected_formatting,
+            )
+        except ValidationError as e:
+            logger.error(
+                "Failed to create SynthesisOutput",
                 extra={
                     "step": "synthesize",
                     "error": str(e),
-                    "accumulated_length": len(accumulated_text),
+                    "response_length": len(final_response),
                 },
             )
-            # If parsing fails, create a SynthesisOutput from accumulated text
+            # Fallback: create output with response text as-is
             synthesis_output = SynthesisOutput(
-                final_text=accumulated_text,
-                formatting="plain",
+                final_text=response_text,
+                formatting="markdown",
             )
 
         # Track token usage and cost
         cost_metrics = calculate_cost(
-            config.synthesize.model, total_input_tokens, total_output_tokens
+            chain_config.synthesize.model, total_input_tokens, total_output_tokens
         )
 
         elapsed_time = time.time() - start_time
@@ -510,10 +563,10 @@ async def synthesize_step(state: ChainState, config: ChainConfig) -> AsyncIterat
             },
         )
 
-        # Yield final state update with complete metadata
-        yield {
+        # Return single dict with complete synthesis result for LangGraph
+        # Even though we streamed tokens, we still return complete dict for graph compatibility
+        return {
             "final_response": synthesis_output.final_text,
-            "messages": [],  # No additional messages to append
             "step_metadata": {
                 "synthesize": {
                     "elapsed_seconds": elapsed_time,

@@ -23,10 +23,73 @@ from workflow.models.openai import (
     ChatCompletionStreamChoice,
     ChatMessage,
     ChoiceDelta,
+    MessageRole,
 )
 from workflow.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def split_response_into_chunks(text: str, chunk_size: int = 50) -> list[str]:
+    """
+    Split long text into progressively yielded chunks for streaming.
+
+    Splits text by word boundaries to avoid breaking words mid-stream.
+    This enables progressive streaming to clients, making responses appear
+    word-by-word rather than all at once.
+
+    Args:
+        text: Text to split into streaming chunks
+        chunk_size: Target size per chunk in characters (default: 50)
+                   Actual chunks may be slightly larger to preserve word boundaries
+
+    Returns:
+        List of text chunks, each approximating chunk_size characters
+        Empty list if input text is empty or None
+
+    Example:
+        >>> chunks = split_response_into_chunks("Hello world from streaming", chunk_size=10)
+        >>> len(chunks) > 1
+        True
+        >>> "".join(chunks) == "Hello world from streaming"
+        True
+
+    Reference:
+        ./documentation/langchain/FASTAPI_LANGCHAIN_STREAMING_CHEATSHEET.md - progressive chunk streaming
+        ./documentation/fastapi/INDEX_AGENT.md - streaming responses
+    """
+    if not text:
+        return []
+
+    chunks: list[str] = []
+    words = text.split()
+    current_chunk = ""
+
+    for word in words:
+        # Calculate size if we add this word
+        test_chunk = current_chunk + (" " if current_chunk else "") + word
+
+        # If adding word exceeds chunk_size and we have content, start new chunk
+        if len(test_chunk) > chunk_size and current_chunk:
+            chunks.append(current_chunk)
+            current_chunk = word
+        else:
+            current_chunk = test_chunk
+
+    # Add any remaining content
+    if current_chunk:
+        chunks.append(current_chunk)
+
+    logger.debug(
+        "Split response into chunks",
+        extra={
+            "original_length": len(text),
+            "chunk_count": len(chunks),
+            "target_chunk_size": chunk_size,
+        },
+    )
+
+    return chunks
 
 
 def convert_openai_to_langchain_messages(messages: list[ChatMessage]) -> list[BaseMessage]:
@@ -96,12 +159,20 @@ def convert_langchain_chunk_to_openai(
     chunk: dict[str, Any] | BaseMessage | str,
 ) -> ChatCompletionChunk:
     """
-    Convert LangChain message/chunk to OpenAI ChatCompletionChunk format.
+    Convert LangChain message/chunk or LangGraph state update to OpenAI ChatCompletionChunk format.
 
     Handles various input types:
-    - dict with "final_response" or accumulated content
+    - dict from LangGraph stream_mode='updates' state updates (the primary use case)
+    - dict with direct "final_response" key (legacy/fallback)
     - BaseMessage with content property
     - Plain string content
+
+    LangGraph stream_mode='updates' format (primary):
+    When using astream(stream_mode='updates'), events are dicts like:
+      {"synthesize": {"final_response": "text", "step_metadata": {...}}}
+
+    This function extracts content from the synthesize node's final_response field
+    and skips analyze/process updates (returns empty content).
 
     Creates a proper OpenAI-compatible streaming chunk with:
     - Unique ID for the stream
@@ -111,7 +182,7 @@ def convert_langchain_chunk_to_openai(
 
     Args:
         chunk: Output from LangChain step or LangGraph execution
-               Can be a dict with state updates, BaseMessage, or string
+               Can be state dict from stream_mode='updates', BaseMessage, or string
 
     Returns:
         ChatCompletionChunk formatted for OpenAI API compatibility
@@ -120,24 +191,41 @@ def convert_langchain_chunk_to_openai(
         ValueError: If chunk cannot be parsed or has invalid structure
 
     Example:
-        >>> from langchain_core.messages import AIMessage
-        >>> chunk = AIMessage(content="Hello world")
-        >>> openai_chunk = convert_langchain_chunk_to_openai(chunk)
-        >>> isinstance(openai_chunk, ChatCompletionChunk)
+        >>> # From LangGraph stream_mode='updates'
+        >>> event = {"synthesize": {"final_response": "Hello world", "step_metadata": {...}}}
+        >>> chunk = convert_langchain_chunk_to_openai(event)
+        >>> isinstance(chunk, ChatCompletionChunk)
         True
-        >>> "Hello" in openai_chunk.choices[0].delta.content
+        >>> "Hello" in chunk.choices[0].delta.content
         True
+
+    Reference:
+        ./documentation/langchain/FASTAPI_LANGCHAIN_STREAMING_CHEATSHEET.md - SSE chunk conversion
+        src/workflow/chains/graph.py - stream_chain() yields stream_mode='updates' events
     """
     # Extract content based on input type
     content = ""
 
     try:
         if isinstance(chunk, dict):
-            # Handle dict from state updates - look for final_response or accumulated text
-            if "final_response" in chunk:
+            # Handle dict from LangGraph state updates (stream_mode='updates')
+            # The event structure is: {"node_name": {"state_key": value, ...}}
+
+            # Try to extract from synthesize node (the one with final_response)
+            if "synthesize" in chunk:
+                synthesize_update = chunk.get("synthesize", {})
+                if isinstance(synthesize_update, dict):
+                    # The synthesize_step returns: {"final_response": "text", "step_metadata": {...}}
+                    final_response = synthesize_update.get("final_response", "")
+                    if final_response:
+                        content = final_response
+
+            # Fallback: Direct final_response at top level (for edge cases)
+            elif "final_response" in chunk:
                 content = chunk.get("final_response", "")
+
+            # Fallback: Try to extract from messages (accumulated state)
             elif "messages" in chunk and chunk["messages"]:
-                # Extract from accumulated messages
                 msg = (
                     chunk["messages"][-1]
                     if isinstance(chunk["messages"], list)
@@ -147,32 +235,48 @@ def convert_langchain_chunk_to_openai(
                     content = msg.content
                 elif isinstance(msg, dict):
                     content = msg.get("content", "")
-            else:
-                # Look for any string-like content
-                for key, value in chunk.items():
-                    if isinstance(value, str) and value:
-                        content = value
-                        break
+
+            # Note: analyze and process updates don't contain "final_response"
+            # so content remains empty for those, which is correct behavior
+            # (they're metadata updates, not content for streaming to user)
 
         elif isinstance(chunk, BaseMessage):
-            # Direct message object
-            content = chunk.content if hasattr(chunk, "content") else str(chunk)
+            # Direct message object (legacy support)
+            if hasattr(chunk, "content"):
+                msg_content = chunk.content
+                # Handle both string and list content from BaseMessage
+                if isinstance(msg_content, str):
+                    content = msg_content
+                elif isinstance(msg_content, list) and len(msg_content) > 0:
+                    # Extract text from content blocks
+                    first_block = msg_content[0]
+                    if hasattr(first_block, "text"):
+                        content = first_block.text
+                    elif hasattr(first_block, "content"):
+                        content = first_block.content
+                    else:
+                        content = str(first_block)
+                else:
+                    content = str(msg_content)
+            else:
+                content = str(chunk)
 
         elif isinstance(chunk, str):
-            # Plain string content
+            # Plain string content (direct response)
             content = chunk
 
         else:
             # Try to convert to string as fallback
             content = str(chunk)
 
-        # Ensure content is string
+        # Ensure content is string and handle None/empty cases
         if not isinstance(content, str):
             content = str(content) if content else ""
 
         # Create ChatCompletionChunk with proper format
+        # Only include content if non-empty (avoid sending empty chunks)
         delta = ChoiceDelta(
-            role="assistant",  # Assistant is providing the response
+            role=MessageRole.ASSISTANT,  # Assistant is providing the response
             content=content if content else None,
         )
 
@@ -195,6 +299,7 @@ def convert_langchain_chunk_to_openai(
             extra={
                 "chunk_type": type(chunk).__name__,
                 "content_length": len(content),
+                "has_synthesize_node": "synthesize" in chunk if isinstance(chunk, dict) else False,
             },
         )
 
@@ -206,6 +311,7 @@ def convert_langchain_chunk_to_openai(
             extra={
                 "chunk_type": type(chunk).__name__,
                 "error": str(exc),
+                "chunk_keys": list(chunk.keys()) if isinstance(chunk, dict) else None,
             },
         )
         raise ValueError(f"Cannot convert chunk to OpenAI format: {exc}") from exc

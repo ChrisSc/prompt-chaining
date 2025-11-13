@@ -234,7 +234,9 @@ def aggregate_step_metrics(step_metadata: dict) -> tuple[int, float, float]:
             "total_tokens": total_tokens,
             "total_cost_usd": total_cost_usd,
             "total_elapsed_seconds": total_elapsed_seconds,
-            "steps_included": [s for s in step_metadata.keys() if s in ("analyze", "process", "synthesize")],
+            "steps_included": [
+                s for s in step_metadata if s in ("analyze", "process", "synthesize")
+            ],
         },
     )
 
