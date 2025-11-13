@@ -155,3 +155,4 @@ llm-docs
 artifacts/
 documentation
 .mcp.json
+.kiro

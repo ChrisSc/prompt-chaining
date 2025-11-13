@@ -7,848 +7,284 @@
 ![OpenAI API](https://img.shields.io/badge/OpenAI-API-412991?logo=openai)
 ![GitHub Template](https://img.shields.io/badge/GitHub-Template-blue?logo=github)
 
-A *github repository template* for scaffolding **prompt-chaining workflows** with Anthropic's Claude and OpenAI-compatible APIs. Built on the proven prompt-chaining pattern with LangGraph StateGraph orchestration and streaming SSE responses.
-
-In this pattern, sequential processing steps (Analysis, Processing, Synthesis) work together to handle complex multi-step reasoning tasks. Each step is independently configured with its own Claude model, token limits, and system prompt. State flows through the workflow via LangGraph's StateGraph, enabling structured outputs and validation gates between steps.
+A *github repository template* for scaffolding **prompt-chaining workflows** with Anthropic's Claude and OpenAI-compatible APIs. Built on the proven prompt-chaining pattern: sequential steps (Analysis, Processing, Synthesis) orchestrated by LangGraph StateGraph with validation gates between steps.
 
 ![Prompt Chaining Pattern](prompt-chaining.png "Prompt Chaining Pattern")
 
-## Key components
-- **Analysis Agent:** Parses user intent, extracts key entities, assesses task complexity, and provides contextual information for subsequent steps. Returns `AnalysisOutput` with structured analysis data.
-- **Processing Agent:** Generates content based on analysis results with domain-specific logic. Returns `ProcessOutput` with generated content and confidence metrics.
-- **Synthesis Agent:** Polishes and formats the processed content into a final, user-ready response. Returns `SynthesisOutput` with structured formatting and styling applied.
-- **LangGraph StateGraph:** Orchestrates sequential step execution with message accumulation, validation gates, and step-specific timeouts via `ChainState` TypedDict.
+## Key Components
+- **Analysis Agent:** Parses user intent, extracts entities, assesses complexity. Returns `AnalysisOutput`.
+- **Processing Agent:** Generates content based on analysis with confidence scoring. Returns `ProcessOutput`.
+- **Synthesis Agent:** Polishes and formats response (streaming). Returns `SynthesisOutput`.
+- **LangGraph StateGraph:** Orchestrates sequential steps with message accumulation and validation gates.
 
-## Overview
+## Overview & Features
 
-This template provides a complete foundation for creating prompt-chaining workflows that:
-- Execute sequential multi-step AI reasoning tasks
-- Stream responses via Server-Sent Events (SSE)
-- Expose OpenAI-compatible APIs
-- Provide structured outputs with type safety
-- Integrate with LangGraph StateGraph for complex workflows
+This template provides a complete foundation for prompt-chaining workflows:
 
-## Features
+**Core**:
+- Sequential Analysis → Processing → Synthesis steps
+- LangGraph StateGraph orchestration with validation gates
+- Streaming responses via Server-Sent Events (SSE)
+- OpenAI-compatible API interface
+- Type-safe structured outputs
 
-- **Prompt-Chaining Pattern**: Sequential execution of Analysis, Processing, and Synthesis steps
-- **LangGraph Integration**: StateGraph orchestration with message accumulation and validation gates
-- **Streaming Responses**: Real-time SSE streaming compatible with OpenAI format
-- **Structured Outputs**: Type-safe step models (AnalysisOutput, ProcessOutput, SynthesisOutput)
-- **Flexible Configuration**: Per-step model selection, token limits, temperature, and timeouts
-- **Observability**: Comprehensive logging, error handling, and configuration
-- **Validation Gates**: Data quality enforcement between steps with schema validation and business rules (intent required, confidence >= 0.5). Invalid outputs route to error handler, preventing bad data from cascading through the workflow.
-- **Token Usage Tracking**: Automatic cost tracking with per-step token/cost logging for workflow validation and optimization. Every API call logs input/output tokens and USD costs, with aggregated metrics across all steps for complete cost visibility.
-- **Performance Benchmarks**: Includes benchmark script for measuring latency, cost, and token usage across different model configurations to guide model selection. See [BENCHMARKS.md](./BENCHMARKS.md) for performance data and analysis.
-- **Request ID Propagation**: Automatic end-to-end request tracing through all steps to Anthropic API for debugging and distributed tracing
-- **Request Size Validation**: Protects against memory exhaustion with configurable request body size limits (default 1MB)
-- **Request Timeout Enforcement**: Prevents runaway requests from consuming resources indefinitely. Separate timeouts for analysis (15s default), processing (30s default), and synthesis (20s default) phases ensure predictable behavior. Configurable via environment variables for different deployment requirements.
-- **Circuit Breaker**: Automatic retry with exponential backoff for Anthropic API resilience
-- **Security Headers**: Standard HTTP security headers (X-Content-Type-Options, X-Frame-Options, X-XSS-Protection, Strict-Transport-Security) enabled by default to protect against common web attacks
-- **Rate Limiting**: Per-user JWT + IP-based, configurable limits, standard HTTP 429 responses
-- **FastAPI**: Modern async Python framework with automatic OpenAPI docs
-- **Type-Safe**: Full type hints and Pydantic v2 validation
-- **LangChain 1.0.0+**: For building prompt chains and managing LLM interactions
-- **LangGraph 1.0.0+**: For composing multi-step agentic workflows with StateGraph orchestration
+**Configuration**:
+- Per-step model selection (Haiku vs. Sonnet)
+- Independent token limits, temperature, timeouts per step
+- Validation gates for data quality enforcement
+- Flexible configuration via environment variables
+
+**Production Features**:
+- Token usage tracking with USD cost logging
+- Request ID propagation for distributed tracing
+- Circuit breaker with automatic retry logic
+- Security headers and request size validation
+- Request timeout enforcement (per-phase)
+- Rate limiting with JWT + IP-based keys
+- Comprehensive structured JSON logging
+- FastAPI with automatic /docs endpoint
+
+**Development**:
+- Full type hints and Pydantic v2 validation
+- >80% test coverage
+- Benchmark script for performance comparison
+- Hot reload development server
+- Interactive API documentation
 
 ## Quick Start
 
-### Prerequisites
-
-- Docker and Docker Compose (recommended), OR
-- Python 3.10+ for manual installation
-- Anthropic API key (required)
-
-### Quick Start with Docker (Recommended)
-
-The fastest way to get started:
+### Setup (3 minutes)
 
 ```bash
-# 1. Clone and navigate to project
+# 1. Clone and configure
 git clone <repo-url>
-cd agentic-orchestrator-worker-template
-
-# 2. Configure environment (see Environment Variables section)
+cd prompt-chaining
 cp .env.example .env
-# Edit .env and add your ANTHROPIC_API_KEY and JWT_SECRET_KEY
+# Edit .env: add ANTHROPIC_API_KEY and JWT_SECRET_KEY (generate: python -c "import secrets; print(secrets.token_urlsafe(32))")
 
-# 3. Build and start the service
+# 2. Choose your path:
+# DOCKER (recommended):
 docker-compose up -d
-
-# 4. Test the service
 curl http://localhost:8000/health/
 
-# 5. Generate an authentication token
-export API_BEARER_TOKEN=$(docker-compose exec orchestrator-worker python scripts/generate_jwt.py)
-
-# 6. Test the API
-python console_client.py "Hello, world!"
-
-# 7. View logs
-docker-compose logs -f
-
-# 8. Stop the service
-docker-compose down
-```
-
-**What you get:**
-- Isolated environment with all dependencies
-- Reproducible builds across machines
-- Ready-to-deploy container for production
-- Automatic health monitoring
-
-For more Docker information, see **Deployment Options** below or [CLAUDE.md](./CLAUDE.md#container-deployment-docker).
-
-### Manual Installation
-
-If you prefer manual installation:
-
-```bash
-# Clone or copy this template
-cd agentic-orchestrator-worker-template
-
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install dependencies
+# OR MANUAL:
+python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-
-# Configure environment
-cp .env.example .env
-# Edit .env and add:
-#   - ANTHROPIC_API_KEY (required)
-#   - JWT_SECRET_KEY (required, generate with: python -c "import secrets; print(secrets.token_urlsafe(32))")
-```
-
-### Run Development Server
-
-```bash
 ./scripts/dev.sh
-# Or manually:
-# fastapi dev src/workflow/main.py --host 0.0.0.0 --port 8000
-```
 
-Navigate to:
-- API: http://localhost:8000
-- Documentation: http://localhost:8000/docs
-- Health: http://localhost:8000/health
-
-### Test with Console Client
-
-```bash
-# Generate a bearer token first
+# 3. Test the API
 export API_BEARER_TOKEN=$(python scripts/generate_jwt.py)
-
-# Test the service
 python console_client.py "Hello, world!"
 ```
+
+**Docker**: Isolated environment, reproducible builds, production-ready
+**Manual**: Development-focused, hot reload, interactive /docs
+
+See [CLAUDE.md](./CLAUDE.md#quick-setup) for detailed setup and Docker guidance.
 
 ## Authentication
 
-This service uses JWT (JSON Web Token) bearer token authentication on all protected endpoints, following OpenAI API authentication standards.
-
-### Setup
-
-1. Generate a secure secret (minimum 32 characters):
-   ```bash
-   python -c "import secrets; print(secrets.token_urlsafe(32))"
-   ```
-
-2. Add to `.env`:
-   ```env
-   JWT_SECRET_KEY=<generated_secret>
-   JWT_ALGORITHM=HS256
-   ```
-
-3. Generate bearer tokens:
-   ```bash
-   # Token without expiration
-   python scripts/generate_jwt.py
-
-   # Token with 7-day expiration
-   python scripts/generate_jwt.py --expires-in 7d
-   ```
-
-### Usage
-
-Include the bearer token in the `Authorization` header:
+JWT bearer token authentication on protected endpoints (`/v1/chat/completions`, `/v1/models`).
 
 ```bash
-TOKEN=$(python scripts/generate_jwt.py)
+# Generate token (configured in .env via JWT_SECRET_KEY)
+python scripts/generate_jwt.py
+python scripts/generate_jwt.py --expires-in 7d
 
-# With curl
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/v1/models
-
-# With console client
-export API_BEARER_TOKEN=$TOKEN
-python console_client.py "Your prompt here"
+# Use token
+export API_BEARER_TOKEN=$(python scripts/generate_jwt.py)
+curl -H "Authorization: Bearer $API_BEARER_TOKEN" http://localhost:8000/v1/models
+python console_client.py "Your prompt"
 ```
 
-### Protected vs. Public Endpoints
+Public endpoints: `/health/`, `/health/ready` (no authentication required)
 
-**Protected (require bearer token):**
-- `POST /v1/chat/completions`
-- `GET /v1/models`
+## Understanding Prompt-Chaining
 
-**Public (no authentication required):**
-- `GET /health/`
-- `GET /health/ready`
+Three-step pattern orchestrated by LangGraph StateGraph:
 
-See [JWT_AUTHENTICATION.md](./JWT_AUTHENTICATION.md) for complete authentication documentation.
+1. **Analyze**: Extract intent, entities, complexity → `AnalysisOutput`
+2. **Process**: Generate content with confidence score → `ProcessOutput`
+3. **Synthesize**: Polish, format, stream response → `SynthesisOutput` (streamed)
 
-## Understanding the Prompt-Chaining Workflow
+**Validation Gates**: After each step, quality gates enforce:
+- After Analyze: Intent must be non-empty
+- After Process: Content non-empty AND confidence >= 0.5
+- Invalid outputs route to error handler
 
-The system implements a three-step prompt-chaining pattern orchestrated by **LangGraph StateGraph** that processes requests sequentially through specialized agents. Each step is independently configured with its own Claude model, token limits, and system prompt. State flows through the workflow via LangGraph's `ChainState` TypedDict with message accumulation and validation gates between steps.
+**Why This Pattern**:
+- Structured reasoning for complex multi-step tasks
+- Quality control between steps prevents bad data cascading
+- Each step independently configurable (model, tokens, temperature, timeout)
+- Cost-optimized: Haiku for most steps, upgrade to Sonnet if needed
+- Real-time responsiveness: Synthesis step streams token-by-token
 
-### The Three-Phase Flow
+**Configuration**: See [PROMPT-CHAINING.md](./PROMPT-CHAINING.md) for detailed configuration guide and recipes.
 
-**Phase 1: Analysis** (`analyze_step()`)
-Parses user requests to extract structured information for downstream processing.
-- Extracts user intent (what they want to accomplish)
-- Identifies key entities, topics, and concepts mentioned
-- Assesses task complexity (simple, moderate, or complex)
-- Gathers contextual information for the processing phase
-- Output: `AnalysisOutput` as structured JSON (intent, key_entities, complexity, context)
+**System Prompts**: Customize in `src/workflow/prompts/chain_*.md`
 
-**Phase 2: Processing** (`process_step()`)
-Generates substantive content addressing the identified intent from the analysis phase.
-- Receives analysis output as context
-- Generates domain-specific content based on analysis
-- Scores confidence in the generated content (0.0-1.0)
-- Captures metadata for traceability and debugging
-- Output: `ProcessOutput` as structured JSON (content, confidence, metadata)
-
-**Phase 3: Synthesis** (`synthesize_step()`)
-Polishes and formats the response with appropriate styling for user consumption (streaming).
-- Receives processed content as context
-- Applies formatting, styling, and polish
-- Streams response token-by-token in real-time to client
-- Ensures professional, user-ready output
-- Output: `SynthesisOutput` as structured JSON (final_text, formatting)
-
-### Data Flow Diagram with Validation Gates
-
-```
-User Request
-    ↓
-analyze_step() → Intent, Entities, Complexity
-    ↓
-[Validation Gate: Intent required & non-empty?]
-    ├─→ PASS → process_step()
-    └─→ FAIL → error_step() returns error
-    ↓
-process_step() → Generated Content with Confidence
-    ↓
-[Validation Gate: Content required & Confidence >= 0.5?]
-    ├─→ PASS → synthesize_step()
-    └─→ FAIL → error_step() returns error
-    ↓
-synthesize_step() → Polished Response (STREAMED)
-    ↓
-Client receives response incrementally
-```
-
-### Validation Gates for Quality Control
-
-Validation gates enforce data quality between steps and prevent bad data from cascading:
-
-**After Analysis Step**:
-- Gate validates `AnalysisOutput` schema
-- Business rule: `intent` field must be present and non-empty
-- Fails fast: Routes invalid analysis to error handler
-
-**After Processing Step**:
-- Gate validates `ProcessOutput` schema
-- Business rules:
-  - `content` field must be present and non-empty
-  - `confidence` must be >= 0.5 (minimum quality threshold)
-- Fails fast: Routes low-confidence or empty content to error handler
-
-**Benefits**:
-- Prevents empty intent from corrupting processing step
-- Prevents low-confidence responses from being synthesized
-- Enables early failure with clear error messages
-- Maintains workflow integrity and data quality
-
-### Why This Pattern?
-
-- **Structured Reasoning**: Breaking down complex tasks into focused steps enables better reasoning at each stage
-- **Quality Control**: Validation gates between steps prevent bad data from cascading through the workflow
-- **Flexibility**: Each step can use different models, token limits, and configurations for optimal cost/quality
-- **LangGraph Orchestration**: StateGraph provides robust multi-step workflow management with message continuity
-- **Observability**: Independent step execution provides visibility into reasoning process and per-step token usage
-- **User Experience**: Streaming synthesis provides real-time responsiveness while maintaining quality
-- **Cost Optimization**: Fast Haiku models for most steps, with ability to upgrade to Sonnet if needed
-
-### Token Usage & Cost Tracking
-
-Token usage is automatically tracked and logged throughout execution:
-
-```bash
-# Each step logs token usage and cost metrics
-# View in logs: grep "elapsed_seconds" logs.json
-# Cost is logged per step and aggregated for total request
-
-# Example log output:
-# "Analysis step completed - 250 input_tokens, 180 output_tokens, $0.0012 cost"
-# "Processing step completed - 450 input_tokens, 520 output_tokens, $0.0042 cost"
-# "Synthesis step completed - 620 input_tokens, 410 output_tokens, $0.0035 cost"
-# Total: 1,320 input_tokens, 1,110 output_tokens, $0.0089 cost
-```
-
-All step metrics are aggregated and available in structured JSON logs for cost monitoring and optimization.
-
-### System Prompts
-
-Each step loads its behavior from a specialized system prompt:
-- `src/workflow/prompts/chain_analyze.md` - Analysis instructions
-- `src/workflow/prompts/chain_process.md` - Processing instructions
-- `src/workflow/prompts/chain_synthesize.md` - Synthesis instructions
-
-For detailed information about system prompts, configuration, and architecture, see [ARCHITECTURE.md](./ARCHITECTURE.md#prompt-chaining-step-functions).
+For technical deep dive: see [ARCHITECTURE.md](./ARCHITECTURE.md)
 
 ## Architecture
 
-### Prompt-Chaining Pattern with LangGraph
+LangGraph StateGraph orchestrates three sequential steps with validation gates and message accumulation:
 
-The workflow uses **LangGraph StateGraph** (`src/workflow/chains/graph.py`) to orchestrate three sequential processing steps with validation gates:
+**Node Structure**:
+- START → analyze (intent extraction) → process (content gen) → synthesize (streaming) → END
+- Validation gates route invalid outputs to error handler
+- Each step is independently configurable (model, tokens, temperature, timeout)
 
-**Graph Structure**:
-- **Nodes**: analyze, process, synthesize, error (4 nodes)
-- **Flow**: START → analyze → (validation gate) → process → (validation gate) → synthesize → END
-- **Conditional Edges**: Validation gates route invalid outputs to error handler
-- **State Management**: ChainState TypedDict with `add_messages` reducer maintains message history
-- **Execution Modes**: Non-streaming (`invoke_chain`) and streaming (`stream_chain`)
+**Key Features**:
+- **Structured Outputs**: Type-safe Pydantic models (AnalysisOutput, ProcessOutput, SynthesisOutput)
+- **State Management**: ChainState TypedDict with `add_messages` reducer maintains conversation context
+- **Streaming**: Only synthesis step streams; earlier steps run to completion
+- **Token Tracking**: Per-step usage logged with USD cost calculation
+- **Error Handling**: Validation failures route gracefully to error handler
 
-**Analysis Agent** (Intent Parser)
-- Model: Configurable (default: Claude Haiku 4.5)
-- Role: Parse user intent, extract key entities, assess complexity
-- Output: `AnalysisOutput` with structured analysis data
-- Execution: Non-streaming via `ainvoke()` (default timeout: 15s)
-- System Prompt: `src/workflow/prompts/chain_analyze.md`
-- Validation Gate: Intent must be non-empty and non-whitespace
-
-**Processing Agent** (Content Generator)
-- Model: Configurable (default: Claude Haiku 4.5)
-- Role: Generate content based on analysis results
-- Output: `ProcessOutput` with generated content and confidence score
-- Execution: Non-streaming via `ainvoke()` (default timeout: 30s)
-- System Prompt: `src/workflow/prompts/chain_process.md`
-- Validation Gate: Content non-empty AND confidence >= 0.5 (minimum quality threshold)
-
-**Synthesis Agent** (Polish & Format)
-- Model: Configurable (default: Claude Haiku 4.5)
-- Role: Polish and format content into final response
-- Output: `SynthesisOutput` with formatted final text
-- Execution: **Streaming via `astream()`** - token-by-token delivery (default timeout: 20s)
-- System Prompt: `src/workflow/prompts/chain_synthesize.md`
-- Streaming: Only node that yields per-token; earlier steps run to completion
-
-### Conditional Edge Logic
-
-**Edge 1: analyze → should_proceed_to_process**
-- Validates: `AnalysisOutput` schema and intent non-empty
-- Routes: "process" (valid) or "error" (invalid)
-
-**Edge 2: process → should_proceed_to_synthesize**
-- Validates: `ProcessOutput` schema, content non-empty, confidence >= 0.5
-- Routes: "synthesize" (valid) or "error" (invalid)
-
-See ARCHITECTURE.md "Validation Gates: Examples and Failure Scenarios" for detailed success/failure path examples with actual state transitions.
-
-### Sequential Processing with State Management
-
-This architecture delivers multi-step reasoning benefits:
-
-**Structured Reasoning**
-- Analysis step extracts intent and context
-- Processing step builds on analysis results
-- Synthesis step polishes and formats output
-
-**State Continuity**
-- LangGraph StateGraph manages state through `ChainState` TypedDict
-- Message accumulation via `add_messages` reducer maintains conversation context
-- Step outputs populate dedicated state fields (analysis, processed_content, final_response)
-- Metadata tracking across entire workflow (per-step tokens, costs, timing)
-
-**Quality Control**
-- Validation gates enforce schema compliance and business rules
-- Invalid outputs route to error handler for graceful failure
-- Prevents low-quality intermediate results from cascading downstream
-
-**Flexibility**
-- Each step independently configurable (model, tokens, temperature, timeout)
-- Per-step system prompts customizable in `src/workflow/prompts/`
-- Message conversion bridge enables OpenAI API compatibility with LangChain/LangGraph internally
-
-**Streaming Integration**
-- Synthesis step uses `astream()` for token-by-token delivery to client
-- Earlier steps run to completion before synthesis begins streaming
-- SSE format for client-side streaming with [DONE] terminator
-
-**Observability & Cost Tracking**
-- Per-step token usage and cost logging
-- Request ID propagation for end-to-end tracing
-- Total cost aggregation across all steps
-
-**Real-World Impact**
-- Complex multi-step reasoning with quality control between steps
-- Structured outputs enable downstream processing and validation
-- Cost-optimized: Fast Haiku for most steps, upgrade to Sonnet if complex reasoning needed
-- User experience: Streaming responses provide real-time feedback
-- Error handling: Validation failures handled gracefully without bad data cascading
-
-See ARCHITECTURE.md "Prompt-Chaining Step Functions" and "LangGraph StateGraph Implementation" for detailed state flow diagrams, token aggregation examples, and conditional edge logic.
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed state flow, conditional edge logic, and token aggregation examples.
 
 ## Use Cases
 
-This architecture excels in domains that require sequential multi-step reasoning with structured outputs:
+**Ideal For**:
+- Document analysis and summarization
+- Content generation (blogs, documentation, marketing)
+- Data extraction and validation
+- Decision support and comparative analysis
+- Code review and refactoring guidance
+- Any task requiring sequential analysis → generation → formatting
 
-**Research & Analysis**
-- Document analysis (analyze document, extract insights, synthesize summary)
-- Research synthesis (gather information, organize findings, generate report)
-- Competitive intelligence (analyze competitor, assess threat, recommend strategy)
-- Market analysis (evaluate market, identify trends, forecast outcomes)
+**Pattern Characteristics**:
+- Sequential steps (step N depends on step N-1)
+- Structured outputs needed
+- Steps have different concerns
+- Quality and observability matter
+- Per-step optimization valuable
 
-**Content Generation**
-- Technical documentation (analyze code, generate docs, format output)
-- Blog posts (analyze topic, generate draft, polish final version)
-- Marketing copy (understand audience, write copy, optimize tone)
-- Email campaigns (analyze recipient, generate message, personalize content)
-
-**Data Processing**
-- Document processing (analyze document, extract entities, validate results)
-- Form analysis (understand requirements, generate response, validate accuracy)
-- Data validation (check quality, identify issues, recommend corrections)
-- Report generation (analyze data, create summary, format output)
-
-**Code & Development**
-- Code review (understand changes, identify issues, provide feedback)
-- Documentation generation (analyze code, understand purpose, generate docs)
-- Test generation (understand code, design tests, generate test code)
-- Refactoring guidance (analyze code, identify improvements, recommend changes)
-
-**Decision Support**
-- Multi-criteria evaluation (understand criteria, score options, rank results)
-- Risk assessment (identify risks, analyze impact, prioritize mitigation)
-- Scenario planning (understand scenario, model outcomes, recommend actions)
-- Option comparison (analyze options, evaluate tradeoffs, recommend choice)
-
-**Ideal Characteristics**
-- Tasks **require sequential steps** (step N depends on step N-1 results)
-- Output needs **structure** (type-safe results for downstream processing)
-- Steps have **different concerns** (analysis vs. generation vs. synthesis)
-- **Quality matters** (each step can be optimized independently)
-- **Observability needed** (intermediate outputs for transparency)
-
-**Not Ideal For**
-- Parallel independent tasks (better suited for orchestrator-worker pattern)
-- Single-turn chat (better suited for single-agent chat)
-- Simple tasks that don't require multiple reasoning steps
-- Real-time bidirectional conversations (better suited for streaming chat)
+**Not Ideal For**:
+- Parallel independent tasks (use orchestrator-worker pattern)
+- Simple single-turn requests
+- Real-time bidirectional conversations
 
 ## Deployment Options
 
-### Docker (Recommended)
+| Method | Best For | Setup Time |
+|--------|----------|-----------|
+| **Docker** | Production, consistent environments | 2 min |
+| **Manual** | Development, learning | 5 min |
+| **Kubernetes** | Large-scale, auto-scaling | Container foundation + manifests |
 
-**Best for:** Production deployments, consistent environments, cloud deployments
-
-**Requires:** Docker and Docker Compose
-
-**Quick start:**
-```bash
-docker-compose up -d
-curl http://localhost:8000/health/
-```
-
-**Documentation:** See "Quick Start with Docker" above and [CLAUDE.md Container Deployment](./CLAUDE.md#container-deployment-docker) section for comprehensive Docker guidance including:
-- Building and running containers
-- Environment configuration
-- Health checks and monitoring
-- Troubleshooting Docker issues
-- Production deployment considerations
-
-### Manual Installation
-
-**Best for:** Development, learning, custom environments
-
-**Requires:** Python 3.10+, virtual environment setup
-
-**Instructions:** See "Manual Installation" above and [CLAUDE.md Development Setup](./CLAUDE.md#development-setup) section
-
-### Kubernetes
-
-**Best for:** Large-scale deployments, auto-scaling, enterprise environments
-
-**Status:** The Docker container serves as the foundation for Kubernetes deployments. Additional Kubernetes manifests (Deployments, Services, ConfigMaps, etc.) can be created based on the Docker container.
+See [CLAUDE.md](./CLAUDE.md#deployment-options) for comprehensive deployment guidance.
 
 ## Configuration
 
-### Chain Configuration & Tuning Guide
-
-The prompt-chaining workflow is highly configurable. Each step can be independently tuned for your use case by adjusting models, token limits, temperature, and timeouts.
-
-#### Quick Configuration Examples
-
-**Fast & Cost-Optimized** (recommended starting point):
+**Quick Start**: Copy `.env.example` to `.env` and add:
 ```env
-CHAIN_ANALYZE_MODEL=claude-haiku-4-5-20251001
-CHAIN_ANALYZE_MAX_TOKENS=1000
-CHAIN_ANALYZE_TEMPERATURE=0.3
-
-CHAIN_PROCESS_MODEL=claude-haiku-4-5-20251001
-CHAIN_PROCESS_MAX_TOKENS=2000
-CHAIN_PROCESS_TEMPERATURE=0.7
-
-CHAIN_SYNTHESIZE_MODEL=claude-haiku-4-5-20251001
-CHAIN_SYNTHESIZE_MAX_TOKENS=1000
-CHAIN_SYNTHESIZE_TEMPERATURE=0.5
-
-CHAIN_ANALYZE_TIMEOUT=15
-CHAIN_PROCESS_TIMEOUT=30
-CHAIN_SYNTHESIZE_TIMEOUT=20
-```
-Cost per request: ~$0.0059 | Speed: 4-8s total
-
-**Balanced Quality** (best for most use cases):
-```env
-# Faster analysis with low temperature for consistency
-CHAIN_ANALYZE_MODEL=claude-haiku-4-5-20251001
-CHAIN_ANALYZE_MAX_TOKENS=1000
-CHAIN_ANALYZE_TEMPERATURE=0.3
-
-# Upgrade to Sonnet for better quality content generation
-CHAIN_PROCESS_MODEL=claude-sonnet-4-5-20250929
-CHAIN_PROCESS_MAX_TOKENS=2000
-CHAIN_PROCESS_TEMPERATURE=0.7
-
-# Back to Haiku for efficient formatting
-CHAIN_SYNTHESIZE_MODEL=claude-haiku-4-5-20251001
-CHAIN_SYNTHESIZE_MAX_TOKENS=1000
-CHAIN_SYNTHESIZE_TEMPERATURE=0.5
-
-CHAIN_ANALYZE_TIMEOUT=15
-CHAIN_PROCESS_TIMEOUT=45
-CHAIN_SYNTHESIZE_TIMEOUT=20
-```
-Cost per request: ~$0.0107 | Speed: 5-10s total
-
-**High Accuracy** (expensive, use only when quality critical):
-```env
-CHAIN_ANALYZE_MODEL=claude-sonnet-4-5-20250929
-CHAIN_ANALYZE_MAX_TOKENS=1500
-CHAIN_ANALYZE_TEMPERATURE=0.5
-
-CHAIN_PROCESS_MODEL=claude-sonnet-4-5-20250929
-CHAIN_PROCESS_MAX_TOKENS=3000
-CHAIN_PROCESS_TEMPERATURE=0.7
-
-CHAIN_SYNTHESIZE_MODEL=claude-sonnet-4-5-20250929
-CHAIN_SYNTHESIZE_MAX_TOKENS=1500
-CHAIN_SYNTHESIZE_TEMPERATURE=0.5
-
-CHAIN_ANALYZE_TIMEOUT=30
-CHAIN_PROCESS_TIMEOUT=60
-CHAIN_SYNTHESIZE_TIMEOUT=30
-```
-Cost per request: ~$0.0177 | Speed: 8-15s total
-
-#### Temperature Tuning
-
-Temperature controls randomness in LLM responses:
-
-| Step | Temperature | Use Case | Example |
-|------|-------------|----------|---------|
-| **Analyze** | 0.0-0.3 | Consistent, deterministic intent parsing | Always extract the same intent from similar requests |
-| **Analyze** | 0.5 (default) | Balanced intent extraction | Good starting point for most use cases |
-| **Analyze** | 0.7-1.0 | Creative entity interpretation | Explore multiple aspects of user intent |
-| **Process** | 0.5 | Factual, consistent content | Technical documentation, fact-based responses |
-| **Process** | 0.7 (default) | Balanced, diverse responses | Good for most content generation |
-| **Process** | 0.9+ | Creative, experimental content | Creative writing, brainstorming mode |
-| **Synthesize** | 0.3-0.5 | Consistent formatting | Structured outputs, templates |
-| **Synthesize** | 0.5-0.7 | Balanced formatting | Default polish and formatting |
-
-#### Token Limits
-
-Adjust token limits based on expected response complexity:
-
-| Step | Default | For Concise Responses | For Detailed Responses |
-|------|---------|----------------------|----------------------|
-| **Analyze** | 2048 | 500-1000 | 1500-2048 |
-| **Process** | 2048 | 1000-1500 | 2048-4000+ |
-| **Synthesize** | 2048 | 500-1000 | 1500-2048 |
-
-**Tips**:
-- Monitor actual token usage in logs: `grep "output_tokens" logs.json`
-- Reduce limits if responses consistently short
-- Increase limits if responses get truncated
-
-#### Timeout Tuning
-
-Timeouts prevent runaway requests and control latency:
-
-| Step | Default | Latency-Critical | Complex Tasks |
-|------|---------|------------------|----------------|
-| **Analyze** | 15s | 10s | 30s |
-| **Process** | 30s | 15s | 60s |
-| **Synthesize** | 20s | 10s | 30s |
-
-**When to adjust**:
-- Decrease if: p99 latency SLA is tight (e.g., mobile app)
-- Increase if: Using Sonnet, generating long responses, or complex reasoning
-
-Example for latency-critical service:
-```env
-CHAIN_ANALYZE_TIMEOUT=10
-CHAIN_PROCESS_TIMEOUT=15
-CHAIN_SYNTHESIZE_TIMEOUT=10
+ANTHROPIC_API_KEY=sk-ant-...
+JWT_SECRET_KEY=<32-char-random-string>
 ```
 
-#### Decision Tree: Choosing Your Configuration
+**Per-Step Tuning**: Each step can independently configure:
+- `CHAIN_ANALYZE_MODEL`, `CHAIN_PROCESS_MODEL`, `CHAIN_SYNTHESIZE_MODEL` (default: Haiku)
+- `CHAIN_*_MAX_TOKENS` (default: 1000-2000)
+- `CHAIN_*_TEMPERATURE` (default: 0.3-0.7)
+- `CHAIN_*_TIMEOUT` (default: 15-30 seconds)
 
-```
-Is your task primarily text extraction/analysis?
-├─ YES: Use all-Haiku config
-│       Temperature: analyze=0.3, process=0.7, synthesize=0.5
-│       Tokens: analyze=1000, process=2000, synthesize=1000
-│       Timeouts: 15s/30s/20s
-│
-└─ NO: Does content generation require complex reasoning?
-   ├─ YES (high stakes, accuracy critical):
-   │   └─ Use Haiku analyze + Sonnet process + Haiku synthesize
-   │       Temperature: analyze=0.3, process=0.7, synthesize=0.5
-   │       Tokens: analyze=1000, process=3000, synthesize=1000
-   │       Timeouts: 15s/45s/20s (Process slower for quality)
-   │
-   └─ NO (general purpose):
-       ├─ Try all-Haiku first
-       │
-       └─ If quality issues:
-           ├─ First: Increase process temperature to 0.9
-           ├─ Second: Increase process tokens to 3000
-           ├─ Third: Upgrade process to Sonnet
-           └─ Last: Upgrade other steps if needed
-```
+**Configuration Patterns**:
+- **Cost-Optimized**: All-Haiku (~$0.006/req, 4-8s)
+- **Balanced**: Haiku + Sonnet process + Haiku (~$0.011/req, 5-10s)
+- **Accuracy-Optimized**: All-Sonnet (~$0.018/req, 8-15s)
 
-### Request Timeout Settings
+See [PROMPT-CHAINING.md](./PROMPT-CHAINING.md) for detailed configuration guide, temperature tuning, token limits, timeout adjustment, and decision tree.
 
-For information on configuring request timeouts, including separate phase-specific controls for each step, see the **Chain Configuration Reference** section in [CLAUDE.md](./CLAUDE.md).
+See [CLAUDE.md](./CLAUDE.md#chain-configuration-reference) for complete environment variable reference.
 
-Key environment variables (from `ChainConfig`):
-- `CHAIN_ANALYZE_TIMEOUT` - Maximum time for analysis step (default: 15s, range: 1-270s)
-- `CHAIN_PROCESS_TIMEOUT` - Maximum time for processing step (default: 30s, range: 1-270s)
-- `CHAIN_SYNTHESIZE_TIMEOUT` - Maximum time for synthesis step (default: 20s, range: 1-270s)
+## Customization
 
-## Customization Guide
+Generic template for your domain. To customize:
 
-This is a **generic template** with a simple example workflow. To adapt for your use case:
+1. **System Prompts** (`src/workflow/prompts/chain_*.md`): Edit to customize analysis, generation, and formatting logic
+2. **Data Models** (`src/workflow/models/chains.py`): Extend AnalysisOutput, ProcessOutput, SynthesisOutput with domain fields
+3. **Configuration** (`.env`): Adjust per-step models, tokens, temperature, timeouts
+4. **Validation** (`src/workflow/chains/validation.py`): Add domain-specific validation rules
 
-### 1. Update Chain Step Prompts
-
-Edit `src/workflow/prompts/`:
-- `chain_analyze.md` - Customize analysis step behavior (intent parsing, entity extraction)
-- `chain_process.md` - Customize processing step behavior (content generation)
-- `chain_synthesize.md` - Customize synthesis step behavior (formatting, polishing)
-
-See [CLAUDE.md Customization Guide](./CLAUDE.md#customization-guide) for detailed guidance on prompt customization and JSON output requirements.
-
-### 2. Customize Chain Models
-
-Edit `src/workflow/models/chains.py`:
-- Extend `AnalysisOutput` with domain-specific analysis fields
-- Extend `ProcessOutput` with domain-specific content fields
-- Extend `SynthesisOutput` with domain-specific formatting fields
-- Customize `ChainConfig` with additional workflow parameters
-
-### 3. Customize Internal Models
-
-Edit `src/workflow/models/internal.py`:
-- Add domain-specific models and validation
-- Define custom data structures for your workflow
-
-### 4. Implement Agents
-
-Edit `src/workflow/agents/`:
-- `analysis.py` - Customize intent parsing and entity extraction for your domain
-- `processing.py` - Implement domain-specific content generation
-- `synthesis.py` - Customize formatting and polishing logic
-
-### 5. Update Configuration
-
-Edit `.env` and `src/workflow/config.py`:
-- Per-step model IDs (upgrade to Sonnet if needed for complex reasoning)
-- Per-step token limits and temperature
-- Timeout configuration per phase
-- Enable/disable validation gates between steps
+See [CLAUDE.md](./CLAUDE.md#customization-guide) for detailed customization guidance.
 
 ## Project Structure
 
 ```
-agentic-service-template/
-├── src/workflow/
-│   ├── agents/           # Orchestrator and Worker agents
-│   ├── api/              # FastAPI endpoints
-│   ├── chains/           # Prompt-chaining workflow
-│   │   ├── graph.py      # LangGraph StateGraph orchestration
-│   │   ├── steps.py      # Step functions (analyze, process, synthesize)
-│   │   ├── validation.py # Validation gates for data quality
-│   │   └── __init__.py
-│   ├── models/           # Data models (OpenAI + internal + chains)
-│   ├── prompts/          # System prompts (chain_analyze.md, etc.)
-│   ├── utils/            # Errors, logging, utilities
-│   │   ├── message_conversion.py  # OpenAI ↔ LangChain format bridge
-│   │   ├── token_tracking.py      # Cost tracking utilities
-│   │   └── logging.py             # Structured JSON logging
-│   ├── config.py         # Configuration management
-│   └── main.py           # FastAPI application
-├── tests/                # Test suite
-├── scripts/              # Development scripts
-├── console_client.py     # Testing client
-└── pyproject.toml        # Dependencies and config
+src/workflow/
+├── chains/
+│   ├── graph.py      # LangGraph StateGraph orchestration
+│   ├── steps.py      # Step functions (analyze, process, synthesize)
+│   └── validation.py # Validation gates
+├── prompts/
+│   ├── chain_analyze.md
+│   ├── chain_process.md
+│   └── chain_synthesize.md
+├── models/
+│   ├── chains.py     # AnalysisOutput, ProcessOutput, SynthesisOutput
+│   └── openai.py     # OpenAI-compatible API models
+├── api/              # FastAPI endpoints
+├── config.py         # Configuration management
+└── main.py           # FastAPI application
+tests/                # Test suite
+scripts/              # Development & utility scripts
 ```
 
-**Key Workflow Components**:
-- `chains/graph.py` - LangGraph StateGraph builder with invoke_chain and stream_chain functions
-- `chains/steps.py` - Three step functions (analyze, process, synthesize) orchestrated by graph
-- `chains/validation.py` - Validation gates that route invalid outputs to error handler
-- `utils/message_conversion.py` - Bridges OpenAI and LangChain message formats
+Key files: `chains/graph.py` (orchestration), `chains/steps.py` (step implementations), `prompts/chain_*.md` (system prompts)
 
 ## Development
 
-### Run Tests
-
 ```bash
-./scripts/test.sh
+./scripts/test.sh          # Run tests with coverage
+./scripts/format.sh        # Format, lint, type check
+./scripts/dev.sh           # Start dev server with hot reload
 ```
 
-### Format Code
-
-```bash
-./scripts/format.sh
-```
-
-### View Coverage
-
-```bash
-open htmlcov/index.html
-```
+See [CLAUDE.md](./CLAUDE.md#development-workflow) for development workflow details.
 
 ## API Reference
 
-### POST /v1/chat/completions
+**Endpoints**:
+- `POST /v1/chat/completions` - Streaming chat completion (OpenAI-compatible)
+- `GET /v1/models` - List available models
+- `GET /health/` - Liveness check
+- `GET /health/ready` - Readiness check
+- `GET /docs` - Interactive API documentation
 
-OpenAI-compatible streaming chat completion endpoint.
-
-**Request:**
+**Request** (OpenAI-compatible):
 ```json
 {
-  "model": "template-service-v1",
-  "messages": [
-    {"role": "user", "content": "Your prompt here"}
-  ],
-  "max_tokens": 1000
+  "model": "orchestrator-worker",
+  "messages": [{"role": "user", "content": "Your prompt"}],
+  "max_tokens": 2000
 }
 ```
 
-**Response:** Server-Sent Events (SSE) stream
+**Response**: Server-Sent Events (SSE) stream with `ChatCompletionChunk` objects
 
-### GET /v1/models
+Full API docs at http://localhost:8000/docs after starting the server.
 
-List available models.
+## Key Environment Variables
 
-### GET /health
+See `.env.example` for complete reference.
 
-Health check endpoint.
+**Required**:
+- `ANTHROPIC_API_KEY` - Claude API key
+- `JWT_SECRET_KEY` - Min 32 chars, JWT secret
 
-## Docker Quick Reference
+**Chain Configuration** (optional, all have defaults):
+- `CHAIN_ANALYZE_MODEL` - Model for analyze step (default: Haiku)
+- `CHAIN_PROCESS_MODEL` - Model for process step (default: Haiku)
+- `CHAIN_SYNTHESIZE_MODEL` - Model for synthesize step (default: Haiku)
+- `CHAIN_*_MAX_TOKENS` - Token limits per step
+- `CHAIN_*_TEMPERATURE` - Temperature per step
+- `CHAIN_*_TIMEOUT` - Timeout per step in seconds
 
-Common Docker commands for this project:
-
-```bash
-# Build image (usually automatic with docker-compose)
-docker build -t prompt-chaining:latest .
-
-# Start service (foreground - see logs in real-time)
-docker-compose up
-
-# Start service (background)
-
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# View logs for specific service
-docker-compose logs -f orchestrator-worker
-
-# Stop service
-docker-compose down
-
-# Stop and remove all data
-docker-compose down -v
-
-# Execute command in running container
-docker-compose exec orchestrator-worker bash
-
-# Rebuild image and restart
-docker-compose up -d --build
-
-# Check container status
-docker-compose ps
-
-# See resource usage
-docker stats orchestrator-worker-api
-
-# Clean rebuild (skip cache)
-docker-compose build --no-cache orchestrator-worker
-```
-
-For more details, see [CLAUDE.md Container Deployment](./CLAUDE.md#container-deployment-docker) section.
-
-## Environment Variables
-
-See `.env.example` for all available configuration options.
-
-Critical variables:
-
-**API & Authentication:**
-- `ANTHROPIC_API_KEY` - **Required** for Claude API access
-- `JWT_SECRET_KEY` - **Required** for authentication (minimum 32 characters)
-- `JWT_ALGORITHM` - JWT algorithm (default: HS256)
-
-**Prompt-Chain Step Models** (per-step configuration):
-- `CHAIN_ANALYZE_MODEL` - Model for analysis step (default: claude-haiku-4-5-20251001)
-- `CHAIN_ANALYZE_MAX_TOKENS` - Max tokens for analysis (default: 1000)
-- `CHAIN_ANALYZE_TEMPERATURE` - Temperature for analysis (default: 0.7)
-- `CHAIN_ANALYZE_TIMEOUT` - Analysis timeout in seconds (default: 15, range: 1-270)
-
-- `CHAIN_PROCESS_MODEL` - Model for processing step (default: claude-haiku-4-5-20251001)
-- `CHAIN_PROCESS_MAX_TOKENS` - Max tokens for processing (default: 2000)
-- `CHAIN_PROCESS_TEMPERATURE` - Temperature for processing (default: 0.7)
-- `CHAIN_PROCESS_TIMEOUT` - Processing timeout in seconds (default: 30, range: 1-270)
-
-- `CHAIN_SYNTHESIZE_MODEL` - Model for synthesis step (default: claude-haiku-4-5-20251001)
-- `CHAIN_SYNTHESIZE_MAX_TOKENS` - Max tokens for synthesis (default: 2000)
-- `CHAIN_SYNTHESIZE_TEMPERATURE` - Temperature for synthesis (default: 0.7)
-- `CHAIN_SYNTHESIZE_TIMEOUT` - Synthesis timeout in seconds (default: 20, range: 1-270)
-
-**Prompt-Chain Validation:**
-- `CHAIN_ENABLE_VALIDATION` - Enable validation gates between steps (default: true)
-- `CHAIN_STRICT_VALIDATION` - Fail fast on validation errors vs. warn and continue (default: false)
-
-**Server:**
-- `LOG_LEVEL` - Logging verbosity (DEBUG, INFO, WARNING, ERROR, CRITICAL) - default: INFO
-- `LOG_FORMAT` - Log format (json, standard) - default: json
+**Server** (optional):
 - `API_HOST` - Server host (default: 0.0.0.0)
 - `API_PORT` - Server port (default: 8000)
+- `LOG_LEVEL` - DEBUG/INFO/WARNING/ERROR/CRITICAL (default: INFO)
+- `LOG_FORMAT` - json or standard (default: json)
 
-### Logging
-
-Structured JSON logging with five levels (CRITICAL, ERROR, WARNING, INFO, DEBUG). Default is INFO for production. Use DEBUG for development/troubleshooting.
-
-See [CLAUDE.md Logging & Observability](./CLAUDE.md#logging--observability) for:
-- Log level descriptions and when each is used
-- JSON log structure and fields
-- Docker log viewing commands
-- Performance and cost tracking
-- Common troubleshooting patterns
+See [CLAUDE.md](./CLAUDE.md#configuration-reference) for complete configuration reference.
