@@ -429,204 +429,64 @@ This strict format is critical for prompt-chaining workflows where structured ou
 
 ### Validation Gates
 
-Data quality enforcement between chain steps via schema and business logic validation.
+Quality enforcement between chain steps via schema and business logic validation.
 
-**Purpose**: Validation gates ensure step outputs conform to expected schemas and satisfy business rules before proceeding. Invalid outputs trigger error routing in the LangGraph workflow.
+**Purpose**: Validation gates ensure outputs conform to schemas and business rules before proceeding. Invalid outputs route to error handler.
 
-**Base Class Architecture**:
-- `ValidationGate` (base class): Schema validation with Pydantic models
-  - `validate(data)` returns tuple of (is_valid: bool, error_message: str | None)
-  - Handles type checking and required field validation
-  - Subclasses override for domain-specific business rules
+**Gate Definitions**:
+- **After Analyze**: `AnalysisOutput` schema + intent must be non-empty
+- **After Process**: `ProcessOutput` schema + content non-empty + confidence >= 0.5
 
-**Step-Specific Gates**:
-
-1. **AnalysisValidationGate** (`src/workflow/chains/validation.py`)
-   - Validates `AnalysisOutput` schema
-   - Business rules:
-     - `intent` field required and must be non-empty (after stripping whitespace)
-     - `key_entities` must be a list (can be empty)
-     - `complexity` must be valid enum value
-   - Returns structured error messages on failure
-
-2. **ProcessValidationGate** (`src/workflow/chains/validation.py`)
-   - Validates `ProcessOutput` schema
-   - Business rules:
-     - `content` field required and must be non-empty (after stripping whitespace)
-     - `confidence` must be numeric and >= 0.5 (minimum quality threshold)
-     - `confidence` must be <= 1.0
-     - `metadata` optional but if present must be valid dict
-   - Confidence threshold enforces quality gates (50% minimum confidence required)
+**Implementation** (`src/workflow/chains/validation.py`):
+- Base class `ValidationGate` with schema validation via Pydantic
+- Subclasses `AnalysisValidationGate`, `ProcessValidationGate` override for business rules
+- Returns `(is_valid: bool, error_message: str | None)`
 
 **LangGraph Integration**:
-
-Conditional edge functions route workflow based on validation results:
-- `should_proceed_to_process(state)` → "process" (valid) or "error" (invalid)
-  - Called after analysis step
-  - Validates analysis output in ChainState["analysis"]
-  - Routes to processing step or error handler
-- `should_proceed_to_synthesize(state)` → "synthesize" (valid) or "error" (invalid)
-  - Called after processing step
-  - Validates processed content in ChainState["processed_content"]
-  - Routes to synthesis step or error handler
-
-**Error Handling**:
-- Invalid data triggers error edge, preventing bad data from reaching next step
-- Comprehensive error messages logged at WARNING level
-- Errors include field names, failure reasons, and expected constraints
-- State continues to error handler for graceful failure recovery
+- `should_proceed_to_process(state)` → routes "process" (valid) or "error" (invalid)
+- `should_proceed_to_synthesize(state)` → routes "synthesize" (valid) or "error" (invalid)
+- Conditional edges prevent bad data from cascading downstream
 
 **Configuration**:
-Via `ChainConfig`:
-- `enable_validation: bool = True` - Enable/disable all validation gates
-- `strict_validation: bool = False` - Fail fast (strict) vs. warn and continue (lenient)
+- `enable_validation: bool = True` - Enable/disable all gates
+- `strict_validation: bool = False` - Fail fast vs. warn and continue (lenient mode)
 
-**Data Type Support**:
-Edge functions handle multiple input types transparently:
-- **Dictionaries**: Direct validation
-- **Pydantic Models**: Converted to dict via `model_dump()`
-- **Strings** (ProcessOutput only): Wrapped with default confidence 0.8 for synthesis
+**Error Handling**: Invalid outputs logged at WARNING level with field names, reasons, constraints. State continues to error handler for graceful recovery.
 
-**Real-World Impact**:
-- Prevents low-confidence or incomplete analysis from corrupting processing
-- Enforces data quality boundaries between interdependent steps
-- Enables fast failure on quality issues vs. cascading bad data
-- Supports both strict and lenient validation modes for different use cases
+**Real-World Impact**: Prevents incomplete/low-confidence outputs from corrupting downstream steps. Enforces quality boundaries while supporting both strict and lenient modes.
 
-### Validation Gates: Examples and Failure Scenarios
+### Validation Gates: Success and Failure Paths
 
-**Success Path Example**:
+**Success Path**: "What is the capital of France?" →
 ```
-Input: "What is the capital of France?"
-  ↓
-analyze_step()
-  ├─ intent: "Find the capital of France"
-  ├─ key_entities: ["France", "capital"]
-  ├─ complexity: "simple"
-  └─ context: {}
-  ↓
-should_proceed_to_process() validates:
-  ├─ intent is non-empty? YES ("Find the capital of France")
-  ├─ intent is only whitespace? NO
-  └─ Result: PROCEED to process_step
-  ↓
-process_step()
-  ├─ content: "The capital of France is Paris..."
-  ├─ confidence: 0.95
-  └─ metadata: { "source": "geographic_knowledge" }
-  ↓
-should_proceed_to_synthesize() validates:
-  ├─ content is non-empty? YES
-  ├─ confidence >= 0.5? YES (0.95)
-  ├─ confidence <= 1.0? YES
-  └─ Result: PROCEED to synthesize_step
-  ↓
-synthesize_step() streams formatted response
+analyze: intent="Find capital of France" → ✓ PROCEED
+process: content="Paris is..." confidence=0.95 → ✓ PROCEED
+synthesize: stream formatted response
 ```
 
-**Failure Path Example 1: Empty Intent**:
+**Failure Path 1** (Empty Intent):
 ```
-Input: "   " (whitespace only)
-  ↓
-analyze_step()
-  ├─ intent: "   " (whitespace)
-  ├─ key_entities: []
-  ├─ complexity: "simple"
-  └─ context: {}
-  ↓
-should_proceed_to_process() validates:
-  ├─ intent is non-empty? NO (whitespace stripped = empty)
-  ├─ Error: "intent field is required and must be non-empty"
-  └─ Result: ROUTE TO ERROR
-  ↓
-error_step() returns:
-  {
-    "error": "Validation failed: intent field is required and must be non-empty",
-    "step": "analysis",
-    "details": {"field": "intent", "issue": "empty"}
-  }
-  ↓
-Stream error to client via SSE
+analyze: intent="" (whitespace only) → ✗ ROUTE TO ERROR
+error_step returns: {"error": "intent field is required..."}
 ```
 
-**Failure Path Example 2: Low Confidence**:
+**Failure Path 2** (Low Confidence):
 ```
-Input: "Explain quantum mechanics in one sentence"
-  ↓
-analyze_step() → OK (intent: "Explain quantum mechanics")
-  ↓
-process_step()
-  ├─ content: "Quantum physics... [incomplete/uncertain]"
-  ├─ confidence: 0.3 (LOW - model unsure)
-  └─ metadata: { "source": "uncertain_reasoning" }
-  ↓
-should_proceed_to_synthesize() validates:
-  ├─ content is non-empty? YES
-  ├─ confidence >= 0.5? NO (0.3 < 0.5)
-  ├─ Error: "confidence score 0.3 does not meet minimum threshold of 0.5"
-  └─ Result: ROUTE TO ERROR
-  ↓
-error_step() returns:
-  {
-    "error": "Validation failed: confidence score is below minimum threshold",
-    "step": "processing",
-    "details": {"field": "confidence", "value": 0.3, "minimum": 0.5}
-  }
-  ↓
-Stream error to client via SSE
+process: confidence=0.3 < 0.5 → ✗ ROUTE TO ERROR
+error_step returns: {"error": "confidence score below minimum threshold"}
 ```
 
-**Boundary Condition: Confidence At Threshold**:
+**Error Routing Logic**:
 ```
-Input: "What is the weather?" (ambiguous - no location)
-  ↓
-process_step()
-  ├─ content: "I need more information about location..."
-  ├─ confidence: 0.5 (AT THRESHOLD)
-  └─ metadata: { "ambiguous_input": true }
-  ↓
-should_proceed_to_synthesize() validates:
-  ├─ confidence >= 0.5? YES (0.5 >= 0.5, boundary condition passes)
-  └─ Result: PROCEED to synthesize_step
-  ↓
-synthesize_step() streams response asking for clarification
-```
+analyze → should_proceed_to_process →
+  ✓ process (intent non-empty)
+  ✗ error (intent empty)
 
-### Error Routing Diagram
+process → should_proceed_to_synthesize →
+  ✓ synthesize (content non-empty AND confidence >= 0.5)
+  ✗ error (validation fails)
 
-```
-ChainState flows through steps:
-
-analyze_step outputs ChainState with analysis field
-    ↓
-┌─────────────────────────────────────────────┐
-│ should_proceed_to_process(state)            │ (Conditional Edge)
-│                                             │
-│ if analysis.intent is non-empty:           │
-│   → route to "process" node                 │
-│ else:                                       │
-│   → route to "error" node                   │
-└─────────────────────────────────────────────┘
-    ↓                               ↓
- process_step              error_step (returns error message)
-    ↓                               ↓
-┌─────────────────────────────────────────────┐
-│ should_proceed_to_synthesize(state)         │ (Conditional Edge)
-│                                             │
-│ if processing.confidence >= 0.5 AND        │
-│    processing.content is non-empty:        │
-│   → route to "synthesize" node              │
-│ else:                                       │
-│   → route to "error" node                   │
-└─────────────────────────────────────────────┘
-    ↓                               ↓
- synthesize_step           error_step (returns error message)
-    ↓                               ↓
-    └─────────────┬─────────────────┘
-                  ↓
-              END node (success or error)
-                  ↓
-            Stream to client
+Both error and success paths → END node → stream to client
 ```
 
 ### LangGraph Integration
@@ -756,198 +616,67 @@ Total request:    ~4-8s (plus network overhead)
 
 ## Technology Stack
 
-### Framework
-- **FastAPI**: Modern async web framework
-- **Uvicorn**: ASGI server
-- **Pydantic v2**: Data validation and settings
+**Framework**: FastAPI (async web), Uvicorn (ASGI), Pydantic v2 (validation)
 
-### AI Integration
-- **Anthropic SDK**: Claude API client
-- **AsyncAnthropic**: Async client for efficient operations
-- **LangChain 1.0.0+**: LLM interactions and message handling
-- **LangGraph 1.0.0+**: StateGraph for multi-step workflow orchestration
-- **Streaming**: Native support for SSE streaming
+**AI Integration**: Anthropic SDK, AsyncAnthropic, LangChain 1.0.0+ (message handling), LangGraph 1.0.0+ (StateGraph orchestration), SSE streaming
 
-### Development
-- **pytest**: Testing framework
-- **black**: Code formatting
-- **ruff**: Fast linting
-- **mypy**: Static type checking
+**Development**: pytest (testing), black (formatting), ruff (linting), mypy (type checking)
 
 ## API Design
 
-### OpenAI Compatibility
-The API is designed to be compatible with OpenAI's chat completions API:
-- Same request/response structure
-- SSE streaming format
-- Model listing endpoint
+**OpenAI Compatibility**: Same request/response structure, SSE streaming format, model listing endpoint. Enables drop-in replacement for OpenAI clients, integration with tools like Open WebUI, familiar developer experience.
 
-This enables:
-- Drop-in replacement for OpenAI clients
-- Integration with tools like Open WebUI
-- Familiar developer experience
-
-### Streaming Architecture
-```
-Client Request
-    ↓
-FastAPI Endpoint (chat.py)
-    ↓
-Orchestrator.process() → AsyncIterator[ChatCompletionChunk]
-    ↓
-Synthesizer.process() → AsyncIterator[ChatCompletionChunk]
-    ↓
-SSE Formatter (data: {json}\n\n)
-    ↓
-StreamingResponse
-    ↓
-Client (chunk by chunk)
-```
+**Streaming Architecture**: Client → FastAPI → Orchestrator/Synthesizer → SSE Formatter → StreamingResponse → Client (chunk by chunk)
 
 ## Data Flow
 
-### Request Path
+**Request Path**: Client POST `/v1/chat/completions` → Security Headers Middleware → Request Size Validation (1 MB default) → JWT verification (signature + expiration) → Pydantic validation → Orchestrator (analyzes) → Workers (parallel) → Synthesizer (aggregate) → SSE streaming with security headers
 
-1. Client sends POST to `/v1/chat/completions` with `Authorization: Bearer <token>` header
-2. **Security Headers Middleware**: Prepares response with security headers
-3. **Request Size Validation**: Validates request body size
-   - Maximum: 1 MB by default (configurable via `MAX_REQUEST_BODY_SIZE`)
-   - Protects against memory exhaustion attacks
-   - GET requests and health endpoints exempt
-4. **JWT Bearer Token Verification**: Via dependency injection
-   - Signature validated with `JWT_SECRET_KEY`
-   - Token expiration checked (if exp claim present)
-   - Returns 401 (unauthorized) for missing tokens
-   - Returns 403 (forbidden) for invalid tokens
-5. FastAPI validates request via Pydantic models
-6. Dependency injection provides Orchestrator agent
-7. **Timeout Enforcement**: Request execution with two-phase timeouts
-   - Worker Coordination Phase: Maximum time for parallel execution (default: 45s)
-   - Synthesis Phase: Maximum time for final response synthesis (default: 30s)
-8. Orchestrator analyzes request
-9. Workers spawned and executed in parallel
-10. Results aggregated by Synthesizer
-11. Response streamed as SSE
-12. **Security Headers Applied**: All response headers added to streamed response
-
-### Response Format
-- **First chunk**: Contains `role: "assistant"` in delta
-- **Subsequent chunks**: Contains incremental `content` in delta
-- **Final chunk**: Contains `finish_reason` and token `usage`
-- **Terminator**: `data: [DONE]` marker
-- **All chunks**: Contain security headers
+**Response Format**:
+- First chunk: role: "assistant"
+- Subsequent: incremental content
+- Final: finish_reason + usage
+- Terminator: data: [DONE]
+- All chunks: security headers
 
 ## Configuration Management
 
-### Settings Hierarchy
-1. Environment variables (.env file)
+**Settings Hierarchy**:
+1. Environment variables (`.env` file)
 2. Pydantic Settings with validation
-3. Computed properties (e.g., base_url, model_pricing)
+3. Computed properties (base_url, model_pricing)
 
-### Key Settings
+**Configuration Areas**:
 - **Anthropic API**: Key, model IDs
-- **Agent Config**: Max tokens, temperature per agent type
-- **Streaming**: Timeout configuration (worker coordination, synthesis)
-- **Request Validation**: Maximum body size
-- **Security**: JWT secret, security headers enablement
-- **CORS**: Origins, methods, headers
+- **Chain Steps**: Model, tokens, temperature per step, timeouts
+- **Streaming**: Worker coordination (45s default), synthesis (30s default)
+- **Request Validation**: Max body size (1 MB default)
+- **Security**: JWT secret, security headers, CORS
 - **Logging**: Level, format, Loki integration
 
-### Timeout Configuration (Phase-Specific)
+**Timeout Phases**:
+- **Worker Coordination** (default 45s): Max duration for parallel execution, range 1-270s
+- **Synthesis** (default 30s): Max duration for final synthesis, range 1-270s
+- **Total Request Budget**: 75 seconds maximum
 
-The service enforces separate timeouts for different execution phases:
-
-**Worker Coordination Phase** (`WORKER_COORDINATION_TIMEOUT`)
-- Default: 45 seconds
-- Controls: Maximum duration for parallel worker execution
-- Range: 1-270 seconds
-- When exceeded: Workers cancelled, error event sent
-
-**Synthesis Phase** (`SYNTHESIS_TIMEOUT`)
-- Default: 30 seconds
-- Controls: Maximum duration for final synthesis and streaming
-- Range: 1-270 seconds
-- When exceeded: Stream ends with error event
-
-**Total Request Budget**: 45s (workers) + 30s (synthesis) = 75 seconds maximum
-
-### Request Size Validation
-
-Protects against memory exhaustion attacks by validating request body sizes.
-
-**Default Behavior**:
-- Default limit: 1 MB (1,048,576 bytes)
-- Applies to: POST, PUT, PATCH requests
-- Exemptions: GET requests, health check endpoints (`/health/*`)
-
-**Configuration**:
-- Environment variable: `MAX_REQUEST_BODY_SIZE`
-- Valid range: 1 KB (1024) to 10 MB (10,485,760)
-- Error response: HTTP 413 Payload Too Large
-
-**Error Response Format**:
-```json
-{
-  "detail": "Request body too large. Maximum size: 1048576 bytes, received: 2097152 bytes"
-}
-```
+**Request Size Validation**: Default 1 MB (1,048,576 bytes), applies to POST/PUT/PATCH, GET and health endpoints exempt, error: HTTP 413
 
 ## Middleware Stack
 
-### Security Headers Middleware (v0.3.0)
+**Security Headers** (enabled by default):
+- `X-Content-Type-Options: nosniff` - MIME-type sniffing protection
+- `X-Frame-Options: DENY` - Clickjacking protection
+- `X-XSS-Protection: 1; mode=block` - Browser XSS filter enablement
+- `HSTS: max-age=31536000; includeSubDomains` - HTTPS enforcement (HTTPS-only)
+- Configuration: `ENABLE_SECURITY_HEADERS=true` (default), applies to all responses
 
-Adds HTTP security headers to all responses to protect against common web vulnerabilities.
+**Request Size Validation**: Default 1 MB, reads `Content-Length`, rejects POST/PUT/PATCH over limit, returns HTTP 413
 
-**Headers Applied**:
-- `X-Content-Type-Options: nosniff` - Prevents MIME-type sniffing attacks
-- `X-Frame-Options: DENY` - Protects against clickjacking
-- `X-XSS-Protection: 1; mode=block` - Enables browser XSS filtering
-- `Strict-Transport-Security: max-age=31536000; includeSubDomains` - HTTPS only
-
-**HSTS Header Behavior**:
-- Only added for HTTPS requests
-- Detects both direct HTTPS and reverse proxy scenarios (via `X-Forwarded-Proto` header)
-- Never sent over HTTP to avoid compatibility issues
-
-**Configuration**:
-- Environment variable: `ENABLE_SECURITY_HEADERS` (default: `true`)
-- Enabled by default for production-ready security posture
-- Can be disabled if needed: `ENABLE_SECURITY_HEADERS=false`
-
-**Applied To**:
-- All HTTP responses, including streaming responses
-- Both protected and public endpoints
-- Health check endpoints
-
-### Request Size Validation Middleware
-
-Validates request body sizes before processing to prevent memory exhaustion attacks.
-
-**Scope**:
-- Applied to: POST, PUT, PATCH requests with body content
-- Exemptions: GET requests, HEAD requests, health check endpoints
-
-**Behavior**:
-- Reads `Content-Length` header
-- Rejects requests exceeding configured limit
-- Returns HTTP 413 Payload Too Large
-
-### Authentication Middleware
-
-JWT bearer token verification applied to protected endpoints.
-
-**Scope**:
-- Applied to: `/v1/chat/completions`, `/v1/models`
-- Public endpoints: `/health/`, `/health/ready`
-
-**Error Handling**:
-- Missing token: HTTP 401 Unauthorized
-- Expired token: HTTP 401 Unauthorized
-- Invalid signature: HTTP 403 Forbidden
+**Authentication**: JWT bearer token verification on protected endpoints (`/v1/chat/completions`, `/v1/models`). Public: `/health/`, `/health/ready`. Errors: 401 (missing/expired token), 403 (invalid signature)
 
 ## Error Handling
 
-### Exception Hierarchy
+**Exception Hierarchy**:
 ```
 TemplateServiceError (base)
 ├── ConfigurationError
@@ -957,288 +686,89 @@ TemplateServiceError (base)
 └── SessionError
 ```
 
-### Error Propagation
-- Exceptions caught at multiple layers
-- Logged with structured context
-- Converted to appropriate HTTP responses
-- Streamed errors in SSE format for streaming endpoints
+**Error Propagation**: Exceptions caught at multiple layers, logged with context, converted to HTTP responses, streamed in SSE format for streaming endpoints.
 
-### Timeout Error Handling
-
-When a timeout occurs during streaming, an error event is sent via Server-Sent Events:
-
-```json
-{
-  "error": {
-    "message": "Streaming operation timed out during worker coordination phase after 45s",
-    "type": "streaming_timeout_error",
-    "phase": "worker coordination",
-    "timeout_seconds": 45
-  }
-}
-```
-
-Stream terminates with `data: [DONE]\n\n` after error event.
+**Timeout Errors**: When timeout occurs, error event sent via SSE with phase info, stream terminates with `[DONE]` marker.
 
 ## Request ID Propagation
 
-### Overview
-Request IDs flow through the entire system for end-to-end observability in distributed tracing.
+**Purpose**: End-to-end request tracing through entire system for debugging and observability.
 
-### Flow
-```
-Client Request
-    ↓
-Middleware (generates/extracts X-Request-ID)
-    ↓
-contextvars.ContextVar (request_id stored)
-    ↓
-FastAPI endpoint
-    ↓
-Orchestrator (retrieves from context, passes to API)
-    ↓
-Workers (retrieve from context, pass to API)
-    ↓
-Synthesizer (retrieves from context, passes to API)
-    ↓
-Anthropic API (X-Request-ID header included)
-```
+**Flow**: Client Request → Middleware (extracts/generates) → contextvars.ContextVar → Steps → Anthropic API (header included)
 
-### Implementation Details
+**Implementation**:
+- Middleware checks/generates `X-Request-ID` header, stores in `ContextVar`
+- Steps retrieve via `get_request_id()`, pass to Anthropic API via `extra_headers`
+- Context auto-isolated per async task
 
-**Middleware** (`main.py:add_request_tracking`)
-- Checks `X-Request-ID` header in incoming request
-- Generates `req_{timestamp_ms}` if missing or empty
-- Calls `set_request_id(request_id)` to store in context
+**Benefits**: Debug client requests at Anthropic API, trace request path, filter logs by request_id, correlate timing/tokens.
 
-**Context Storage** (`utils/request_context.py`)
-- Uses `ContextVar('request_id', default=None)`
-- Automatically isolated per async task
-- Accessible via `get_request_id()` from any async context
+**Example**: Client sends `X-Request-ID: req_client_123` → appears in all logs and Anthropic API calls with same ID for end-to-end correlation.
 
-**Agent Usage** (all three agents)
-- Call `get_request_id()` to retrieve from context
-- Pass `extra_headers={"X-Request-ID": request_id}` to `messages.create()`
-- Handles None gracefully (no header sent if not set)
+## Performance Monitoring & Metrics
 
-### Benefits
-1. **Debugging**: Correlate client requests with Anthropic API calls
-2. **Tracing**: Follow request path through orchestrator → workers → synthesizer
-3. **Support**: Share request IDs with Anthropic for investigating issues
-4. **Logging**: Filter logs by request_id to see complete request lifecycle
-5. **Monitoring**: Track request timing and token usage per request ID
+**Automatic Collection**:
+- **Per-Step**: Input/output tokens, USD cost, elapsed time, confidence (process step only)
+- **Aggregation**: Each step extracts metrics, API logs total across all steps
+- **Cost Calculation**: Model-specific pricing (Haiku: $1/$5, Sonnet: $3/$15 per 1M tokens)
 
-### Example Correlation
-
-Client sends: `X-Request-ID: req_client_123`
-
-Logs will show:
+**Metrics Log Entry**:
 ```json
 {
-  "timestamp": "2025-11-09 17:00:00,000",
-  "request_id": "req_client_123",
-  "message": "Chat completion request completed",
-  "total_tokens": 3210,
-  "total_cost_usd": 0.0156
-}
-```
-
-Anthropic API sees: `X-Request-ID: req_client_123` in request headers
-
-This enables end-to-end correlation across all systems.
-
-## Performance Monitoring
-
-### Metrics Collection Architecture
-
-The prompt-chaining workflow automatically collects comprehensive performance metrics across all three processing steps, enabling cost monitoring, performance optimization, and SLA validation.
-
-**Metrics Collected Per Step**:
-- **Input/Output Tokens**: Tracked from LLM API responses for cost calculation
-- **Cost in USD**: Calculated using model-specific pricing (Haiku: $1/$5 per 1M tokens, Sonnet: $3/$15 per 1M tokens)
-- **Elapsed Time**: Step execution duration in seconds for latency monitoring
-- **Confidence Score** (Process step only): Quality metric for generated content
-- **Content/Output Length**: Character count of step outputs for capacity planning
-
-**Aggregation Flow**:
-1. Each step extracts `usage_metadata` from LLM response
-2. Cost calculated for step using `calculate_cost(model, input_tokens, output_tokens)`
-3. Metrics stored in `ChainState.step_metadata[step_name]`
-4. API endpoint aggregates all steps and logs total metrics
-
-**Example Aggregated Metrics Log Entry**:
-```json
-{
-  "timestamp": "2025-11-12T17:00:00.000Z",
-  "level": "INFO",
-  "logger": "workflow.api.v1.chat",
   "message": "Chat completion request completed",
   "request_id": "req_1731424800123",
-  "model": "orchestrator-worker",
-  "status": "success",
   "total_elapsed_seconds": 4.8,
-  "aggregated_step_elapsed_seconds": 4.8,
   "total_tokens": 1250,
   "total_cost_usd": 0.00485,
   "step_breakdown": {
-    "analyze": {
-      "model": "claude-haiku-4-5-20251001",
-      "elapsed_seconds": 1.2,
-      "input_tokens": 300,
-      "output_tokens": 150,
-      "total_tokens": 450,
-      "cost_usd": 0.00100
-    },
-    "process": {
-      "model": "claude-haiku-4-5-20251001",
-      "elapsed_seconds": 2.1,
-      "input_tokens": 400,
-      "output_tokens": 400,
-      "total_tokens": 800,
-      "cost_usd": 0.00240,
-      "confidence_score": 0.87
-    },
-    "synthesize": {
-      "model": "claude-haiku-4-5-20251001",
-      "elapsed_seconds": 1.5,
-      "input_tokens": 500,
-      "output_tokens": 400,
-      "total_tokens": 900,
-      "cost_usd": 0.00145
-    }
+    "analyze": {"elapsed_seconds": 1.2, "input_tokens": 300, "output_tokens": 150, "cost_usd": 0.001},
+    "process": {"elapsed_seconds": 2.1, "input_tokens": 400, "output_tokens": 400, "cost_usd": 0.0024, "confidence_score": 0.87},
+    "synthesize": {"elapsed_seconds": 1.5, "input_tokens": 500, "output_tokens": 400, "cost_usd": 0.00145}
   }
 }
 ```
 
 **Utilities** (`src/workflow/utils/token_tracking.py`):
-- `calculate_cost(model: str, input_tokens: int, output_tokens: int) -> CostMetrics`
-  - Returns USD cost for a specific step based on model and token counts
-- `aggregate_step_metrics(step_metadata: dict) -> tuple[int, float]`
-  - Aggregates total tokens and cost across all steps
-- Model pricing data (Haiku, Sonnet, and future models)
+- `calculate_cost(model, input_tokens, output_tokens) -> CostMetrics`
+- `aggregate_step_metrics(step_metadata) -> tuple[int, float]`
+- Model pricing data (Haiku, Sonnet, future models)
 
-### LangGraph MemorySaver Checkpointer
-
-The LangGraph StateGraph uses **MemorySaver** checkpointer to maintain conversation state and enable future session persistence features.
-
-**Purpose**: Maintains complete state history across all workflow steps, enabling:
-- Future multi-turn conversations (client can continue from prior state)
-- State inspection for debugging and monitoring
-- Graceful recovery from failures
+**LangGraph MemorySaver**: Maintains conversation state history for:
+- Future multi-turn conversation support
+- State inspection for debugging
+- Graceful failure recovery
 - Session replay for troubleshooting
-
-**State Storage** (`ChainState`):
-```python
-ChainState = {
-    "messages": [HumanMessage, AIMessage, AIMessage, ...],  # Conversation history
-    "analysis": { "intent": "...", "entities": [...], ... },  # Analyze step output
-    "processed_content": { "content": "...", "confidence": 0.87, ... },  # Process step output
-    "final_response": "# Polished response text",  # Synthesize step output (accumulated)
-    "step_metadata": {  # Metrics per step
-        "analyze": { "elapsed_seconds": 1.2, "tokens": 450, "cost_usd": 0.001, ... },
-        "process": { "elapsed_seconds": 2.1, "tokens": 800, "cost_usd": 0.0024, ... },
-        "synthesize": { "elapsed_seconds": 1.5, "tokens": 900, "cost_usd": 0.00145, ... }
-    }
-}
-```
-
-**Checkpointer Integration** (in `src/workflow/chains/graph.py`):
-- Graph compiled with: `graph.compile(checkpointer=MemorySaver())`
-- Enables: `graph.ainvoke(state, {"configurable": {"thread_id": "session-123"}})`
-- Future enhancement: Support for multi-turn conversations and state recovery
-
-**Monitoring Benefits**:
-- State snapshots available for inspection at each step
-- Message history preserved for complete conversation context
-- Enables audit trails for compliance and debugging
-- Foundation for advanced features (session recovery, multi-turn chaining)
+- Compiled with: `graph.compile(checkpointer=MemorySaver())`
 
 ## Logging Architecture
 
-### Structured Logging System
-
-**JSON Formatter** - All logs emit structured JSON with:
+**Structured JSON Logging**:
 - Standard fields: timestamp, level, logger, message
-- Context fields: request_id, user/subject, method, path, status_code
+- Context: request_id, user/subject, method, path, status_code
 - Performance: response_time, elapsed_seconds, duration_ms
-- Cost tracking: input_tokens, output_tokens, total_tokens, input_cost_usd, output_cost_usd, total_cost_usd
-- Rate limiting: limit, remaining, reset
+- Cost: input_tokens, output_tokens, total_tokens, total_cost_usd
 - Errors: error, error_type, error_code
 
-**Log Levels by Component:**
+**Log Levels**:
+- **CRITICAL**: Application cannot start (missing API key, init failure)
+- **ERROR**: Operation failed (timeout, API error, task failure)
+- **WARNING**: Potentially harmful (oversized request, rate limit, JWT invalid)
+- **INFO**: Normal operations (requests, responses, token usage, costs) - production default
+- **DEBUG**: Detailed diagnostics (health checks, JWT success, validation) - development only
 
-| Component | CRITICAL | ERROR | WARNING | INFO | DEBUG |
-|-----------|----------|-------|---------|------|-------|
-| main.py | Orchestrator init failure | Shutdown errors, service errors | Request size exceeded | Startup, requests, responses | - |
-| api/v1/chat.py | - | Agent unavailable, API errors | - | Request tracking, completion | Request details, streaming |
-| api/health.py | - | - | - | - | Health checks |
-| api/dependencies.py | - | - | JWT verification failed | - | JWT verified |
-| middleware/* | - | - | Request size exceeded | - | Security headers, size validation passed |
-| utils/token_tracking.py | - | - | Unknown model pricing | - | Cost calculations |
-| agents/* | - | Task failures | - | Task processing | Task execution details |
-
-**Log Level Usage:**
-- **CRITICAL**: Application cannot start (API key invalid, orchestrator init failed)
-- **ERROR**: Operation failed (API timeout, worker task error, agent processing error)
-- **WARNING**: Potentially harmful (request too large, rate limit exceeded, JWT invalid)
-- **INFO**: Normal operations (requests, responses, token usage, costs) - **production default**
-- **DEBUG**: Detailed diagnostics (health checks, JWT success, validation passed) - **development only**
-
-### Cost & Performance Tracking
-
-**Token Usage Flow:**
-1. Worker agents track input/output tokens per task
-2. Orchestrator aggregates worker metrics
-3. Synthesizer adds final synthesis tokens
-4. API logs total tokens and USD cost on request completion
-
-**Cost Calculation:**
-- Model pricing: Haiku ($1/$5 per 1M tokens), Sonnet ($3/$15 per 1M tokens)
-- Computed per agent, aggregated per request
-- Logged at INFO level on every request completion
-
-**Example Cost Log:**
-```json
-{
-  "level": "INFO",
-  "logger": "workflow.api.v1.chat",
-  "message": "Chat completion request completed",
-  "request_id": "req_1762674924016",
-  "model": "orchestrator-worker",
-  "elapsed_seconds": 2.45,
-  "total_tokens": 3210,
-  "total_cost_usd": 0.0156
-}
-```
-
-**Performance Metrics:**
-- `response_time` (seconds) - Per-request latency
-- `elapsed_seconds` (seconds) - Total request duration
-- `duration_ms` (milliseconds) - Specific operation timing
-
-### Production Considerations
-
-**Log Aggregation:**
+**Production Setup**:
 - JSON format compatible with: Loki, Elasticsearch, CloudWatch, Splunk
-- Set `LOKI_URL` environment variable for automatic Loki integration
-- All logs include timestamp, level, logger, message for filtering
+- Set `LOKI_URL` for automatic Loki integration
+- Configure Docker logging driver for rotation/aggregation
+- Apply retention policies: 30-90 days typical
 
-**Log Retention:**
-- Container logs: Docker handles rotation (json-file driver default)
-- Production: Configure Docker logging driver (splunk, awslogs, etc.)
-- Aggregation systems: Apply retention policies (30-90 days typical)
+**Cost & Performance Tracking**:
+- Token usage: Input/output from LLM responses, aggregated per request
+- Cost calculation: Model-specific pricing, logged per request
+- Metrics: Elapsed time, response latency, per-step breakdown
+- Example: `grep "total_cost_usd" logs.json` for cost analysis
 
-**Log Filtering:**
-- Production: `LOG_LEVEL=INFO` (excludes DEBUG noise)
-- Troubleshooting: `LOG_LEVEL=DEBUG` (temporary, verbose)
-- Errors only: `LOG_LEVEL=ERROR` (minimal logging)
-- Query by level: `level="ERROR"` (aggregation system query)
-
-**Monitoring Queries:**
-- Cost tracking: `SELECT total_cost_usd, model FROM logs WHERE level="INFO" AND message LIKE "%completed%"`
-- Error rates: `SELECT COUNT(*) FROM logs WHERE level="ERROR" GROUP BY error_type`
-- Performance: `SELECT AVG(elapsed_seconds) FROM logs WHERE level="INFO"`
-- Rate limiting: `SELECT remaining FROM logs WHERE message LIKE "%rate limit%"`
+**Example Log Query**: Cost tracking: `jq 'select(.level=="INFO") | .total_cost_usd' logs.json`
 
 ## Security Considerations
 
@@ -1412,658 +942,67 @@ See CLAUDE.md "Circuit Breaker & Retry Logic" section for configuration details.
 
 ## Prompt-Chaining Step Functions
 
-The prompt-chaining workflow is implemented through three step functions orchestrated by LangGraph StateGraph. Each step processes `ChainState`, performs LLM operations, and returns state updates.
+Three sequential LLM calls orchestrated by LangGraph StateGraph. File: `src/workflow/chains/steps.py`.
 
-### Overview
+**Step 1: Analyze** (extract intent, entities, complexity)
+- Input: User message from `ChainState.messages`
+- Output: `AnalysisOutput` (intent, key_entities, complexity, context)
+- Execution: Non-streaming via `ainvoke()`, default 15s timeout
+- System prompt: `src/workflow/prompts/chain_analyze.md`
+- Token tracking: Extract metrics, calculate cost, log at INFO level
 
-The step functions implement the three sequential LLM calls that compose the prompt-chaining pattern:
+**Step 2: Process** (generate content with confidence)
+- Input: Analysis from `ChainState.analysis`
+- Output: `ProcessOutput` (content, confidence >= 0.5, metadata)
+- Execution: Non-streaming via `ainvoke()`, default 30s timeout
+- System prompt: `src/workflow/prompts/chain_process.md`
+- Validation: Confidence must be >= 0.5, content non-empty
 
-- **File Location**: `src/workflow/chains/steps.py`
-- **Graph Orchestration**: `src/workflow/chains/graph.py` - LangGraph StateGraph implementation
-- **Integration**: Called by LangGraph StateGraph via conditional edges (validation gates)
-- **State Management**: All steps read from and write to `ChainState` TypedDict
-- **Token Tracking**: Each step extracts usage metadata and logs costs
-- **Message Conversion**: `src/workflow/utils/message_conversion.py` - OpenAI ↔ LangChain message format conversion
+**Step 3: Synthesize** (polish, format, stream to client)
+- Input: Processed content from `ChainState.processed_content`
+- Output: `SynthesisOutput` (final_text, formatting), streamed token-by-token
+- Execution: **Streaming** via `astream()`, default 20s timeout
+- System prompt: `src/workflow/prompts/chain_synthesize.md`
+- Streaming: Only step that yields per-token; earlier steps run to completion
 
-### Step 1: Analyze Step (analyze_step)
-
-**Purpose**: Parse user request and extract structured information for downstream processing.
-
-**Input**:
-- User message from `ChainState.messages` (latest HumanMessage)
-
-**Configuration** (from `ChainConfig.analyze`):
-- Model: Configurable (default: Claude Haiku 4.5)
-- Max tokens: Configurable (default: 1000)
-- Temperature: Configurable (default: 0.7)
-- System prompt file: `src/workflow/prompts/chain_analyze.md`
-
-**Output** (`AnalysisOutput`):
-```json
-{
-  "intent": "User's primary goal",
-  "key_entities": ["entity1", "entity2"],
-  "complexity": "simple|moderate|complex",
-  "context": { "additional": "contextual info" }
-}
-```
-
-**Returns** (ChainState updates):
-- `analysis`: AnalysisOutput as dict
-- `messages`: Appended LLM response
-- `step_metadata.analyze`: Token counts, costs, elapsed time
-
-**Key Behavior**:
-- Non-streaming: Uses `ainvoke()` for single LLM call
-- JSON parsing: Validates response against AnalysisOutput Pydantic model
-- Markdown handling: Automatically cleans markdown code blocks (```json...```)
-- Error handling: Logs parsing errors at ERROR level; raises ValidationError
-
-**Token Tracking**:
-- Extracts `usage_metadata` from LLM response
-- Calculates USD cost using `calculate_cost()` utility
-- Logs input/output tokens and cost in structured format
-
-### Step 2: Process Step (process_step)
-
-**Purpose**: Generate content based on analysis results with confidence scoring.
-
-**Input**:
-- Analysis from `ChainState.analysis`
-- Builds context prompt including: intent, key entities, complexity level, additional context
-
-**Configuration** (from `ChainConfig.process`):
-- Model: Configurable (default: Claude Haiku 4.5)
-- Max tokens: Configurable (default: 2000)
-- Temperature: Configurable (default: 0.7)
-- System prompt file: `src/workflow/prompts/chain_process.md`
-
-**Output** (`ProcessOutput`):
-```json
-{
-  "content": "Generated content addressing the intent",
-  "confidence": 0.85,
-  "metadata": { "generation_approach": "value" }
-}
-```
-
-**Returns** (ChainState updates):
-- `processed_content`: ProcessOutput as dict
-- `messages`: Appended LLM response
-- `step_metadata.process`: Token counts, costs, confidence, elapsed time
-
-**Key Behavior**:
-- Non-streaming: Uses `ainvoke()` for single LLM call
-- Context-aware: Incorporates analysis results into processing prompt
-- Confidence scoring: Confidence score must pass validation gate (>= 0.5)
-- JSON parsing: Validates response against ProcessOutput Pydantic model
-- Error handling: Logs parsing errors at ERROR level; raises ValidationError
-
-**Token Tracking**:
-- Extracts `usage_metadata` from LLM response
-- Calculates USD cost using `calculate_cost()` utility
-- Logs confidence score and content length alongside token metrics
-
-### Step 3: Synthesize Step (synthesize_step)
-
-**Purpose**: Polish and format final response for user delivery.
-
-**Input**:
-- Processed content from `ChainState.processed_content`
-- Builds context prompt including: content, confidence level, generation metadata
-
-**Configuration** (from `ChainConfig.synthesize`):
-- Model: Configurable (default: Claude Haiku 4.5)
-- Max tokens: Configurable (default: 2000)
-- Temperature: Configurable (default: 0.7)
-- System prompt file: `src/workflow/prompts/chain_synthesize.md`
-
-**Output** (`SynthesisOutput`):
-```json
-{
-  "final_text": "Polished and formatted response",
-  "formatting": "markdown|plain|html"
-}
-```
-
-**Yields** (AsyncIterator of ChainState updates):
-- Incremental state updates for each streamed chunk
-- `final_response`: Accumulated text from streaming chunks
-- `messages`: Appended response chunks
-- `step_metadata.synthesize`: Progressive and final token counts, costs, formatting
-
-**Key Behavior**:
-- **Streaming**: Only synthesis step uses `astream()` for token-by-token delivery to client
-- Incremental yielding: Yields state updates for each chunk to enable real-time streaming
-- JSON parsing with fallback: Attempts to parse accumulated text as SynthesisOutput; falls back to plain text on failure
-- Markdown handling: Automatically cleans markdown code blocks from accumulated response
-- Error handling: Logs JSON parsing warnings at WARNING level; uses accumulated text as fallback
-
-**Token Tracking**:
-- Extracts `usage_metadata` from final chunk (contains aggregate token counts)
-- Calculates USD cost using `calculate_cost()` utility
-- Logs formatting style and final text length alongside token metrics
+**All Steps**:
+- JSON parsing: Auto-clean markdown code blocks before parsing
+- Error handling: Parse failures logged (ERROR for analyze/process, WARNING for synthesize with fallback)
+- Validation gates: After analyze and process, route valid→next-step or invalid→error-handler
+- Cost tracking: Each step logs tokens, cost, elapsed time in step_metadata
 
 ### State Flow Through Steps
 
-**Before and After State Examples**:
+ChainState flows: START → analyze (populate analysis) → process (populate processed_content) → synthesize (accumulate final_response) → END
 
-**Initial State** (at graph START):
-```python
-ChainState = {
-    "messages": [
-        HumanMessage(content="Compare Python async vs sync performance")
-    ],
-    "analysis": None,
-    "processed_content": None,
-    "final_response": None,
-    "step_metadata": {}
-}
-```
+**State Fields Populated**:
+- `messages`: Add_messages reducer accumulates LLM responses per step
+- `analysis`: AnalysisOutput dict after analyze step
+- `processed_content`: ProcessOutput dict after process step
+- `final_response`: Synthesized text accumulated from streaming chunks
+- `step_metadata`: Tracks tokens, cost, elapsed time per step
 
-**After analyze_step**:
-```python
-ChainState = {
-    "messages": [
-        HumanMessage(content="Compare Python async vs sync performance"),
-        AIMessage(content='{"intent":"...", "key_entities":[...], ...}')  # Added by add_messages reducer
-    ],
-    "analysis": {
-        "intent": "Compare performance characteristics of async vs sync Python code",
-        "key_entities": ["Python", "async", "sync", "performance"],
-        "complexity": "moderate",
-        "context": {"domain": "backend development"}
-    },
-    "processed_content": None,
-    "final_response": None,
-    "step_metadata": {
-        "analyze": {
-            "model": "claude-haiku-4-5-20251001",
-            "input_tokens": 85,
-            "output_tokens": 156,
-            "cost_usd": 0.000967,
-            "elapsed_seconds": 1.23
-        }
-    }
-}
-```
+**Message Accumulation**: Add_messages reducer automatically merges new messages into list, preserving conversation history for context and multi-turn capability.
 
-**After process_step**:
-```python
-ChainState = {
-    "messages": [
-        HumanMessage(content="Compare Python async vs sync..."),
-        AIMessage(content='{"intent":"...", ...}'),  # From analyze_step
-        AIMessage(content='{"content":"Async Python code..."}')  # Added by process_step
-    ],
-    "analysis": { ... },  # Unchanged from analyze_step
-    "processed_content": {
-        "content": "Asynchronous Python uses await/async keywords to yield control...",
-        "confidence": 0.87,
-        "metadata": {"approach": "comparative analysis", "examples_included": True}
-    },
-    "final_response": None,
-    "step_metadata": {
-        "analyze": { ... },  # From previous step
-        "process": {
-            "model": "claude-haiku-4-5-20251001",
-            "input_tokens": 287,  # Includes analysis output as context
-            "output_tokens": 412,
-            "cost_usd": 0.003515,
-            "confidence_score": 0.87,
-            "content_length": 2156,
-            "elapsed_seconds": 3.45
-        }
-    }
-}
-```
+### System Prompts & Configuration
 
-**After synthesize_step** (streaming completes):
-```python
-ChainState = {
-    "messages": [
-        HumanMessage(content="Compare Python async vs sync..."),
-        AIMessage(content='{"intent":"...", ...}'),
-        AIMessage(content='{"content":"Asynchronous..."}'),
-        AIMessage(content='{"final_text":"# Async vs Sync...", "formatting":"markdown"}')
-    ],
-    "analysis": { ... },
-    "processed_content": { ... },
-    "final_response": "# Async vs Sync Python Performance\n\nAsynchronous Python uses...",  # Accumulated from streaming chunks
-    "step_metadata": {
-        "analyze": { ... },
-        "process": { ... },
-        "synthesize": {
-            "model": "claude-haiku-4-5-20251001",
-            "input_tokens": 521,  # Includes processed_content as context
-            "output_tokens": 387,
-            "cost_usd": 0.002696,
-            "formatting_style": "markdown",
-            "final_text_length": 3421,
-            "elapsed_seconds": 2.11,
-            "chunks_received": 58  # Streaming detail
-        }
-    }
-}
-```
+**System Prompts** (in `src/workflow/prompts/`):
+- `chain_analyze.md`: Intent parsing, entity extraction, complexity assessment
+- `chain_process.md`: Content generation, confidence scoring, metadata capture
+- `chain_synthesize.md`: Formatting, polishing, styling logic
 
-**Token Aggregation Across All Steps**:
-```
-ANALYZE STEP:
-  Input tokens:  85  (user message + system prompt)
-  Output tokens: 156 (analysis output)
-  Cost: $0.000967
-
-PROCESS STEP:
-  Input tokens:  287 (analysis output + system prompt + context)
-  Output tokens: 412 (process output)
-  Cost: $0.003515
-
-SYNTHESIZE STEP:
-  Input tokens:  521 (process output + system prompt + context)
-  Output tokens: 387 (final polished response)
-  Cost: $0.002696
-
-TOTAL REQUEST:
-  Input tokens:  893 (85 + 287 + 521)
-  Output tokens: 955 (156 + 412 + 387)
-  Total tokens:  1,848
-  Total cost:    $0.007178  ($0.000967 + $0.003515 + $0.002696)
-  Total time:    6.79s (1.23 + 3.45 + 2.11)
-```
-
-**Cost Calculation Details** (Haiku pricing: $1/$5 per 1M tokens):
-```python
-# For Haiku model (claude-haiku-4-5-20251001)
-input_cost = input_tokens / 1_000_000 * 1.00   # $1 per 1M input tokens
-output_cost = output_tokens / 1_000_000 * 5.00 # $5 per 1M output tokens
-total_cost = input_cost + output_cost
-
-# Example from analyze_step:
-# 85 input + 156 output
-input_cost = 85 / 1_000_000 * 1.00 = $0.000085
-output_cost = 156 / 1_000_000 * 5.00 = $0.000780
-total_cost = $0.000865 (matches logged $0.000967 with variance for rounding)
-```
-
-**Message Accumulation via add_messages Reducer**:
-The `add_messages` reducer automatically handles merging of new messages into the messages list:
-- Each step appends its output to messages
-- Conversation history preserved for context
-- Earlier messages available for later steps to reference if needed
-- Enables full conversation continuity if adapted for multi-turn
-
-**State Flow Through Steps**:
-```
-User Request (ChainState.messages)
-    ↓
-[analyze_step] extracts intent, entities, complexity
-    ├─ Reads: messages (latest HumanMessage)
-    ├─ Processes: ~1-2 seconds (LLM inference)
-    └─ Writes: analysis dict, messages (appends AIMessage), step_metadata.analyze
-    ↓
-[validation gate: should_proceed_to_process]
-    ├─ Checks: analysis.intent is non-empty
-    └─ Routes: to "process" (success) or "error" (failure)
-    ↓
-[process_step] generates content with confidence
-    ├─ Reads: analysis dict (uses as context)
-    ├─ Processes: ~2-4 seconds (LLM inference)
-    └─ Writes: processed_content dict, messages (appends AIMessage), step_metadata.process
-    ↓
-[validation gate: should_proceed_to_synthesize]
-    ├─ Checks: processed_content confidence >= 0.5
-    └─ Routes: to "synthesize" (success) or "error" (failure)
-    ↓
-[synthesize_step] polishes and formats (STREAMING)
-    ├─ Reads: processed_content dict (uses as context)
-    ├─ Processes: ~1-2 seconds (LLM streaming inference)
-    ├─ Yields: ChainState updates per chunk (~20-100ms per chunk)
-    └─ Writes: final_response accumulated, messages (appends chunks), step_metadata.synthesize
-    ↓
-Client receives streamed response (58 chunks in example)
-```
-
-### System Prompts
-
-Each step loads its system prompt from a markdown file in `src/workflow/prompts/`:
-
-1. **chain_analyze.md**: Instructions for analysis step
-   - Controls intent parsing logic
-   - Defines entity extraction rules
-   - Specifies complexity assessment criteria
-   - Customizable for domain-specific analysis
-
-2. **chain_process.md**: Instructions for processing step
-   - Controls content generation approach
-   - Defines confidence scoring logic
-   - Specifies metadata capture
-   - Customizable for domain-specific generation
-
-3. **chain_synthesize.md**: Instructions for synthesis step
-   - Controls formatting and polishing logic
-   - Defines styling preferences
-   - Specifies final validation rules
-   - Customizable for domain-specific formatting
-
-### Error Handling & Validation
-
-**JSON Parsing**:
-- Analyze and Process steps raise exceptions on parse failures
-- Synthesize step falls back to accumulated text on parse failures
-- Markdown code block wrapper is automatically removed before parsing
-
-**Validation Gates**:
-- After analyze step: `should_proceed_to_process()` routes to process or error handler
-- After process step: `should_proceed_to_synthesize()` routes to synthesize or error handler
-- Business rules enforced:
-  - Analysis: Intent must be present and non-empty
-  - Process: Content must be non-empty, confidence >= 0.5
-
-**Logging**:
-- All steps log token usage and cost metrics at INFO level
-- Parse failures logged at ERROR (analyze, process) or WARNING (synthesize) level
-- Step execution duration and performance metrics included in logs
-
-### Configuration Reference
-
-All step functions are configured via `ChainConfig` (from `src/workflow/models/chains.py`):
-
-```python
-class ChainStepConfig(BaseModel):
-    model: str                      # Claude model ID
-    max_tokens: int                 # Maximum tokens to generate
-    temperature: float              # Sampling temperature (0.0-2.0)
-    system_prompt_file: str         # Prompt filename in src/workflow/prompts/
-
-class ChainConfig(BaseModel):
-    analyze: ChainStepConfig        # Analysis step config
-    process: ChainStepConfig        # Processing step config
-    synthesize: ChainStepConfig     # Synthesis step config
-    analyze_timeout: int = 15       # Step timeout (1-270 seconds)
-    process_timeout: int = 30
-    synthesize_timeout: int = 20
-    enable_validation: bool = True  # Enable validation gates
-    strict_validation: bool = False # Fail fast vs. warn on errors
-```
-
-### Cost & Performance
-
-**Token Usage**:
-- Each step extracts `input_tokens` and `output_tokens` from LLM response
-- Used to calculate USD cost via `calculate_cost(model, input_tokens, output_tokens)`
-- Aggregated across steps for complete workflow cost tracking
-
-**Timing**:
-- Each step measures elapsed time via `time.time()`
-- Logged in structured format: `elapsed_seconds`
-- Enables performance optimization and SLA monitoring
-
-**Typical Performance** (on Haiku models):
-- Analysis step: 1-2 seconds
-- Processing step: 2-4 seconds
-- Synthesis step: 1-2 seconds (plus streaming overhead)
-- Total request: 4-8 seconds + network latency
+**ChainConfig** (from `src/workflow/models/chains.py`):
+- Per-step: model, max_tokens, temperature, timeout
+- Validation: enable_validation, strict_validation
+- Timeouts: 1-270 second range per step
 
 ## Configuration Best Practices
 
-This section provides production guidance for optimizing the prompt-chaining workflow for your specific use case.
-
-### Cost Optimization Strategies
-
-**Cost Breakdown by Step** (typical Haiku model execution):
-```
-Analyze Step (Intent Extraction)
-  - Input: 250 tokens (user message + system prompt)
-  - Output: 150 tokens (intent, entities, complexity)
-  - Cost: (250 * $1/1M) + (150 * $5/1M) = $0.00100
-
-Process Step (Content Generation)
-  - Input: 400 tokens (analysis output + system prompt + context)
-  - Output: 400 tokens (generated content)
-  - Cost: (400 * $1/1M) + (400 * $5/1M) = $0.00240
-
-Synthesize Step (Formatting & Polishing)
-  - Input: 500 tokens (process output + system prompt + context)
-  - Output: 400 tokens (formatted response)
-  - Cost: (500 * $1/1M) + (400 * $5/1M) = $0.00250
-
-Total per request: $0.00590
-```
-
-**Configuration Cost Impact** (per request, 1000 user message tokens):
-
-| Configuration | Analyze Cost | Process Cost | Synthesize Cost | Total Cost | Speed | Use Case |
-|--|--|--|--|--|--|--|
-| All-Haiku | $0.00100 | $0.00240 | $0.00250 | $0.00590 | 4-8s | Cost-optimized, fast |
-| Haiku + Sonnet + Haiku | $0.00100 | $0.00720 | $0.00250 | $0.01070 | 5-10s | Balanced quality/cost |
-| All-Sonnet | $0.00300 | $0.00720 | $0.00750 | $0.01770 | 8-15s | Max quality (expensive) |
-
-**Cost Optimization Strategies**:
-1. Start with all-Haiku baseline ($0.01/req)
-2. Monitor actual costs: `grep "total_cost_usd" logs.json`
-3. Upgrade Process step first if quality issues (biggest quality impact per dollar)
-4. Only upgrade Analyze/Synthesize if domain-specific requirements demand it
-5. Reduce token limits if responses consistently under max
-6. Use lower temperature (0.3-0.5) to get more deterministic, shorter responses
-
-### Performance Tuning
-
-**Latency Analysis by Step** (typical execution on Haiku):
-```
-Analyze Step (intent parsing)
-  - Network roundtrip: 200ms
-  - LLM inference: 800ms
-  - Subtotal: ~1.0s (range: 0.5s-2.0s)
-
-Process Step (content generation)
-  - Network roundtrip: 300ms
-  - LLM inference: 2.0-3.0s
-  - Subtotal: ~2.5s (range: 1.5s-4.0s)
-
-Synthesize Step (formatting + streaming)
-  - Network roundtrip: 300ms
-  - LLM inference: 1.0-1.5s
-  - Streaming overhead: 0.5s
-  - Subtotal: ~2.0s (range: 1.0s-2.5s)
-
-Total Request Time: 5.5s (range: 4.0s-8.5s depending on model and complexity)
-```
-
-**Timeout Adjustment for Different SLAs**:
-
-| SLA Target | Analyze | Process | Synthesize | Notes |
-|--|--|--|--|--|
-| p99 < 5s (mobile) | 10s | 15s | 10s | Tight timeouts, use Haiku only, low tokens |
-| p99 < 8s (web) | 15s | 30s | 20s | Default, balanced for most use cases |
-| p99 < 15s (batch) | 30s | 60s | 30s | Loose timeouts, can use Sonnet, high tokens |
-
-**Optimization for Low-Latency Services**:
-```env
-# Tight timeouts force quick completion or failure
-CHAIN_ANALYZE_TIMEOUT=10
-CHAIN_PROCESS_TIMEOUT=15
-CHAIN_SYNTHESIZE_TIMEOUT=10
-
-# Smaller token limits mean shorter responses
-CHAIN_ANALYZE_MAX_TOKENS=800
-CHAIN_PROCESS_MAX_TOKENS=1200
-CHAIN_SYNTHESIZE_MAX_TOKENS=800
-
-# Lower temperature means more deterministic (faster) responses
-CHAIN_ANALYZE_TEMPERATURE=0.3
-CHAIN_PROCESS_TEMPERATURE=0.5
-CHAIN_SYNTHESIZE_TEMPERATURE=0.3
-
-# Use only Haiku for speed
-CHAIN_ANALYZE_MODEL=claude-haiku-4-5-20251001
-CHAIN_PROCESS_MODEL=claude-haiku-4-5-20251001
-CHAIN_SYNTHESIZE_MODEL=claude-haiku-4-5-20251001
-```
-
-### Common Configuration Patterns
-
-**Pattern 1: Cost-Optimized** (best for volume services)
-```env
-# All-Haiku: cheapest option (~$0.008 per request)
-CHAIN_ANALYZE_MODEL=claude-haiku-4-5-20251001
-CHAIN_PROCESS_MODEL=claude-haiku-4-5-20251001
-CHAIN_SYNTHESIZE_MODEL=claude-haiku-4-5-20251001
-
-# Reduce tokens for brevity
-CHAIN_ANALYZE_MAX_TOKENS=1000
-CHAIN_PROCESS_MAX_TOKENS=1500
-CHAIN_SYNTHESIZE_MAX_TOKENS=800
-
-# Lower temperature for determinism
-CHAIN_ANALYZE_TEMPERATURE=0.3
-CHAIN_PROCESS_TEMPERATURE=0.5
-CHAIN_SYNTHESIZE_TEMPERATURE=0.3
-
-# Default timeouts
-CHAIN_ANALYZE_TIMEOUT=15
-CHAIN_PROCESS_TIMEOUT=30
-CHAIN_SYNTHESIZE_TIMEOUT=20
-```
-Cost: ~$0.006-0.010/req | Speed: 4-8s
-
-**Pattern 2: Balanced Quality** (best for most applications)
-```env
-# Haiku for analysis (fast intent parsing)
-CHAIN_ANALYZE_MODEL=claude-haiku-4-5-20251001
-CHAIN_ANALYZE_MAX_TOKENS=1000
-CHAIN_ANALYZE_TEMPERATURE=0.3
-
-# Sonnet for generation (quality matters here)
-CHAIN_PROCESS_MODEL=claude-sonnet-4-5-20250929
-CHAIN_PROCESS_MAX_TOKENS=2500
-CHAIN_PROCESS_TEMPERATURE=0.7
-
-# Haiku for synthesis (efficient formatting)
-CHAIN_SYNTHESIZE_MODEL=claude-haiku-4-5-20251001
-CHAIN_SYNTHESIZE_MAX_TOKENS=1000
-CHAIN_SYNTHESIZE_TEMPERATURE=0.5
-
-# Slightly longer timeouts for Sonnet
-CHAIN_ANALYZE_TIMEOUT=15
-CHAIN_PROCESS_TIMEOUT=45
-CHAIN_SYNTHESIZE_TIMEOUT=20
-```
-Cost: ~$0.008-0.012/req | Speed: 5-10s
-
-**Pattern 3: Accuracy-Optimized** (for high-stakes applications)
-```env
-# All-Sonnet: best quality (~$0.020+ per request)
-CHAIN_ANALYZE_MODEL=claude-sonnet-4-5-20250929
-CHAIN_PROCESS_MODEL=claude-sonnet-4-5-20250929
-CHAIN_SYNTHESIZE_MODEL=claude-sonnet-4-5-20250929
-
-# Higher token limits for detailed responses
-CHAIN_ANALYZE_MAX_TOKENS=2000
-CHAIN_PROCESS_MAX_TOKENS=4000
-CHAIN_SYNTHESIZE_MAX_TOKENS=2000
-
-# Balanced temperature for quality
-CHAIN_ANALYZE_TEMPERATURE=0.5
-CHAIN_PROCESS_TEMPERATURE=0.7
-CHAIN_SYNTHESIZE_TEMPERATURE=0.5
-
-# Longer timeouts for careful processing
-CHAIN_ANALYZE_TIMEOUT=30
-CHAIN_PROCESS_TIMEOUT=60
-CHAIN_SYNTHESIZE_TIMEOUT=30
-```
-Cost: ~$0.015-0.025/req | Speed: 8-15s
-
-**Pattern 4: Latency-Optimized** (for real-time systems)
-```env
-# All-Haiku for speed
-CHAIN_ANALYZE_MODEL=claude-haiku-4-5-20251001
-CHAIN_PROCESS_MODEL=claude-haiku-4-5-20251001
-CHAIN_SYNTHESIZE_MODEL=claude-haiku-4-5-20251001
-
-# Tight token limits force brevity
-CHAIN_ANALYZE_MAX_TOKENS=800
-CHAIN_PROCESS_MAX_TOKENS=1200
-CHAIN_SYNTHESIZE_MAX_TOKENS=600
-
-# Low temperature for determinism
-CHAIN_ANALYZE_TEMPERATURE=0.2
-CHAIN_PROCESS_TEMPERATURE=0.4
-CHAIN_SYNTHESIZE_TEMPERATURE=0.2
-
-# Strict timeouts enforce fast completion
-CHAIN_ANALYZE_TIMEOUT=8
-CHAIN_PROCESS_TIMEOUT=12
-CHAIN_SYNTHESIZE_TIMEOUT=8
-```
-Cost: ~$0.005-0.008/req | Speed: 2-4s
-
-### Troubleshooting Configuration Issues
-
-**Problem: Validation failures (intent empty, low confidence)**
-
-Symptoms:
-- Frequent "intent field is required and must be non-empty" errors
-- Process step producing content with confidence < 0.5
-
-Solutions:
-1. Check analyze step temperature: try 0.5-0.7 for more flexibility
-2. Increase analyze max_tokens to 1500 for more detailed extraction
-3. Review chain_analyze.md prompt - may need adjustment for your domain
-4. Upgrade analyze to Sonnet if dealing with ambiguous user requests
-
-**Problem: Timeouts (requests exceeding CHAIN_*_TIMEOUT)**
-
-Symptoms:
-- Logs showing "timeout" errors during chain execution
-- Clients receiving partial responses or errors
-
-Solutions:
-1. Increase the timeout for the failing step (15s → 30s, 30s → 60s)
-2. Reduce token limits if generating too much content
-3. Switch to faster models (Sonnet → Haiku, but only after trying other options)
-4. Check network latency (add 0.5s per step for high-latency networks)
-5. Monitor actual step execution times in logs to set appropriate timeouts
-
-**Problem: Low quality outputs**
-
-Symptoms:
-- Generated content is shallow, inaccurate, or missing key information
-- User complaints about response quality
-
-Solutions:
-1. Increase process step temperature: 0.7 → 0.9 for more diverse responses
-2. Increase process max_tokens: 2000 → 3000+ for more detailed content
-3. Upgrade process step to Sonnet for better reasoning
-4. Review/improve chain_process.md prompt for better instructions
-5. Increase analyze temperature to 0.7 for more thorough analysis
-
-**Problem: High costs**
-
-Symptoms:
-- logs show total_cost_usd consistently above budget
-- Cost per request higher than expected
-
-Solutions:
-1. Check which step uses most tokens: `grep "input_tokens\|output_tokens" logs.json`
-2. Reduce token limits for high-consumption steps
-3. Lower temperature for more concise responses (0.7 → 0.3-0.5)
-4. Switch expensive steps to Haiku (Sonnet → Haiku)
-5. Monitor token usage and adjust limits based on actual needs
-
-**Problem: Streaming stops or feels slow**
-
-Symptoms:
-- Synthesis step doesn't stream smoothly to client
-- Delays between token arrivals
-
-Solutions:
-1. Reduce synthesize max_tokens to force shorter outputs
-2. Increase synthesize temperature slightly (0.3 → 0.5) for less determinism = faster inference
-3. Check STREAMING_CHUNK_BUFFER env var (default 0, increase to 100 for batching)
-4. Increase synthesize_timeout if timeout is cutting off streaming
-5. Check network bandwidth and latency
+See [PROMPT-CHAINING.md](./PROMPT-CHAINING.md) for detailed configuration guidance including:
+- Cost optimization strategies and cost breakdown by step
+- Performance tuning and SLA-based timeout adjustment
+- Common configuration patterns (cost-optimized, balanced, accuracy, latency)
+- Troubleshooting guide (validation failures, timeouts, quality, costs, streaming)
 
 ## LangGraph StateGraph Implementation
 
@@ -2164,30 +1103,10 @@ The template is designed for easy customization of the prompt-chaining workflow:
 
 ## Deployment
 
-### Development
-- Local FastAPI dev server
-- Hot reload on code changes
-- Interactive API docs at /docs
+**Development**: Local FastAPI dev server with hot reload, interactive API docs at /docs
 
-### Production (Recommended)
-- Containerized deployment (Docker)
-- Reverse proxy (nginx, Traefik)
-- Process manager (systemd, supervisor)
-- Health checks and readiness probes
-- Horizontal scaling (multiple instances)
-- Load balancing
+**Production**: Containerized deployment (Docker), reverse proxy (nginx), health checks, horizontal scaling, load balancing
 
 ## Future Enhancements
 
-Potential additions to the template:
-- Persistent storage for session history
-- Advanced user management and RBAC
-- WebSocket support for bidirectional communication
-- Tool use and function calling
-- Multi-modal support (images, files)
-- Advanced error recovery and retry logic
-- Comprehensive metrics and observability (Prometheus, Grafana)
-- A/B testing framework
-- Request deduplication and caching
-- Custom rate limiting strategies
-- API key management and tracking
+Potential additions: persistent session storage, advanced user management, WebSocket bidirectional communication, tool use and function calling, multi-modal support, advanced error recovery, metrics/observability (Prometheus), A/B testing, caching, custom rate limiting, API key management and tracking
