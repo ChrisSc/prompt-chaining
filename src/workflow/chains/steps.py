@@ -21,6 +21,8 @@ from typing import Any
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
+from langgraph.config import get_stream_writer
 from pydantic import ValidationError
 
 from workflow.models.chains import (
@@ -358,21 +360,32 @@ async def process_step(state: ChainState, config: ChainConfig) -> dict[str, Any]
         raise
 
 
-async def synthesize_step(state: ChainState, config: ChainConfig) -> dict[str, Any]:
+async def synthesize_step(
+    state: ChainState,
+    runnable_config: RunnableConfig,
+    chain_config: ChainConfig,
+) -> dict[str, Any]:
     """
-    Synthesis step: Polish and format the final response.
+    Synthesis step: Polish and format the final response with token streaming.
 
     This is the final step in the prompt-chaining workflow. It takes the processed
     content from the previous step and transforms it into a polished, professionally
     formatted response optimized for readability and delivery.
 
-    This step executes as a non-streaming LangGraph node that returns a single
-    dictionary with the complete synthesis result. Streaming for HTTP SSE responses
-    is handled at the FastAPI endpoint level.
+    This step uses Claude's streaming API to emit tokens progressively via LangGraph's
+    get_stream_writer() function. The stream writer enables "custom" mode streaming to
+    the HTTP endpoint for real-time token delivery. Still returns a complete dict to
+    LangGraph for state management compatibility.
+
+    References:
+    - ./documentation/langchain/oss/python/langgraph/streaming.md "Stream custom data" section
+    - ./documentation/langchain/oss/python/langgraph/streaming.md "Use with any LLM" section
+    - Extended example at lines 559-676 for streaming arbitrary chat models pattern
 
     Args:
         state: Current ChainState containing processed content and messages
-        config: ChainConfig with model selection, token limits, and timeouts
+        runnable_config: RunnableConfig from LangGraph for proper streaming context propagation
+        chain_config: ChainConfig with model selection, token limits, and timeouts
 
     Returns:
         Dictionary with state updates:
@@ -393,7 +406,7 @@ async def synthesize_step(state: ChainState, config: ChainConfig) -> dict[str, A
         raise ValueError("Processed content not found in state for synthesis step")
 
     # Load system prompt
-    system_prompt = load_system_prompt(config.synthesize.system_prompt_file)
+    system_prompt = load_system_prompt(chain_config.synthesize.system_prompt_file)
 
     # Build synthesis prompt from processed content
     if isinstance(processed_content, dict):
@@ -416,12 +429,11 @@ async def synthesize_step(state: ChainState, config: ChainConfig) -> dict[str, A
         f"Produce a polished, formatted final response."
     )
 
-    # Initialize ChatAnthropic client (non-streaming)
+    # Initialize ChatAnthropic client for streaming
     llm = ChatAnthropic(
-        model=config.synthesize.model,
-        temperature=config.synthesize.temperature,
-        max_tokens=config.synthesize.max_tokens,
-        streaming=False,
+        model=chain_config.synthesize.model,
+        temperature=chain_config.synthesize.temperature,
+        max_tokens=chain_config.synthesize.max_tokens,
     )
 
     # Prepare messages for LLM
@@ -431,30 +443,31 @@ async def synthesize_step(state: ChainState, config: ChainConfig) -> dict[str, A
     ]
 
     try:
-        # Call Claude API and collect full response (not streaming)
-        message = await llm.ainvoke(messages)
+        # Get the stream writer for custom token streaming
+        # Per LangGraph documentation, this works inside graph nodes to emit custom data
+        writer = get_stream_writer()
 
-        # Extract text from response
+        # Stream from Claude and accumulate response while emitting tokens
         final_response = ""
-        if message.content:
-            if isinstance(message.content, str):
-                final_response = message.content
-            elif isinstance(message.content, list) and len(message.content) > 0:
-                # Handle list of content blocks
-                first_block = message.content[0]
-                if hasattr(first_block, "text"):
-                    final_response = first_block.text
-                elif hasattr(first_block, "content"):
-                    final_response = first_block.content
-                else:
-                    final_response = str(first_block)
-
-        # Extract token usage from response
         total_input_tokens = 0
         total_output_tokens = 0
-        if hasattr(message, "usage_metadata") and message.usage_metadata:
-            total_input_tokens = message.usage_metadata.get("input_tokens", 0)
-            total_output_tokens = message.usage_metadata.get("output_tokens", 0)
+
+        # Use Claude's stream API to get tokens progressively
+        # Pattern from documentation: ./documentation/langchain/oss/python/langgraph/streaming.md lines 559-676
+        # astream yields AIMessageChunk objects with token content
+        async for chunk in llm.astream(messages):
+            # Extract token from chunk
+            token = chunk.content if chunk.content else ""
+            if token:
+                final_response += token
+                # Emit token via stream writer for "custom" mode streaming
+                writer({"type": "token", "content": token})
+
+            # Capture token usage from response metadata
+            # Usage is typically only populated on the final chunk
+            if hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
+                total_input_tokens = chunk.usage_metadata.get("input_tokens", 0)
+                total_output_tokens = chunk.usage_metadata.get("output_tokens", 0)
 
         # Parse final response into SynthesisOutput
         try:
@@ -485,7 +498,7 @@ async def synthesize_step(state: ChainState, config: ChainConfig) -> dict[str, A
 
         # Track token usage and cost
         cost_metrics = calculate_cost(
-            config.synthesize.model, total_input_tokens, total_output_tokens
+            chain_config.synthesize.model, total_input_tokens, total_output_tokens
         )
 
         elapsed_time = time.time() - start_time
@@ -507,6 +520,7 @@ async def synthesize_step(state: ChainState, config: ChainConfig) -> dict[str, A
         )
 
         # Return single dict with complete synthesis result for LangGraph
+        # Even though we streamed tokens, we still return complete dict for graph compatibility
         return {
             "final_response": synthesis_output.final_text,
             "step_metadata": {

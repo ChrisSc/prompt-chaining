@@ -30,6 +30,68 @@ from workflow.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def split_response_into_chunks(text: str, chunk_size: int = 50) -> list[str]:
+    """
+    Split long text into progressively yielded chunks for streaming.
+
+    Splits text by word boundaries to avoid breaking words mid-stream.
+    This enables progressive streaming to clients, making responses appear
+    word-by-word rather than all at once.
+
+    Args:
+        text: Text to split into streaming chunks
+        chunk_size: Target size per chunk in characters (default: 50)
+                   Actual chunks may be slightly larger to preserve word boundaries
+
+    Returns:
+        List of text chunks, each approximating chunk_size characters
+        Empty list if input text is empty or None
+
+    Example:
+        >>> chunks = split_response_into_chunks("Hello world from streaming", chunk_size=10)
+        >>> len(chunks) > 1
+        True
+        >>> "".join(chunks) == "Hello world from streaming"
+        True
+
+    Reference:
+        ./documentation/langchain/FASTAPI_LANGCHAIN_STREAMING_CHEATSHEET.md - progressive chunk streaming
+        ./documentation/fastapi/INDEX_AGENT.md - streaming responses
+    """
+    if not text:
+        return []
+
+    chunks: list[str] = []
+    words = text.split()
+    current_chunk = ""
+
+    for word in words:
+        # Calculate size if we add this word
+        test_chunk = current_chunk + (" " if current_chunk else "") + word
+
+        # If adding word exceeds chunk_size and we have content, start new chunk
+        if len(test_chunk) > chunk_size and current_chunk:
+            chunks.append(current_chunk)
+            current_chunk = word
+        else:
+            current_chunk = test_chunk
+
+    # Add any remaining content
+    if current_chunk:
+        chunks.append(current_chunk)
+
+    logger.debug(
+        "Split response into chunks",
+        extra={
+            "original_length": len(text),
+            "chunk_count": len(chunks),
+            "target_chunk_size": chunk_size,
+        },
+    )
+
+    return chunks
+
+
 def convert_openai_to_langchain_messages(messages: list[ChatMessage]) -> list[BaseMessage]:
     """
     Convert OpenAI API ChatMessage format to LangChain BaseMessage format.
