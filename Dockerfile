@@ -55,7 +55,7 @@ COPY --chown=appuser:appuser src/workflow /app/src/workflow
 COPY --chown=appuser:appuser scripts /app/scripts
 
 # Copy tests directory for test execution
-COPY --chown=appuser:appuser tests /app/tests
+# COPY --chown=appuser:appuser tests /app/tests
 
 # Create necessary directories with proper permissions
 RUN mkdir -p /app/logs && chown -R appuser:appuser /app

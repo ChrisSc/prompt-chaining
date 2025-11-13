@@ -501,31 +501,43 @@ async def synthesize_step(
                 total_input_tokens = chunk.usage_metadata.get("input_tokens", 0)
                 total_output_tokens = chunk.usage_metadata.get("output_tokens", 0)
 
-        # Parse final response into SynthesisOutput
+        # Create SynthesisOutput from clean markdown response
+        # The final_response is already clean formatted markdown/text (no JSON wrapper)
+        # Detect formatting based on content characteristics
+        response_text = final_response.strip()
+
+        # Simple heuristic to detect formatting style:
+        # - If contains markdown headers (#, ##, ###), treat as markdown
+        # - If contains numbered/bullet lists with specific patterns, detect accordingly
+        # - Default to markdown for modern rich formatting
+        if "#" in response_text and ("\n" in response_text or "##" in response_text):
+            detected_formatting = "markdown"
+        elif any(response_text.startswith(f"{i}.") for i in range(1, 10)):
+            detected_formatting = "structured"
+        elif "  -" in response_text or "\n-" in response_text:
+            detected_formatting = "markdown"
+        else:
+            # Default to markdown for clean, modern formatting
+            detected_formatting = "markdown"
+
         try:
-            # Remove markdown code blocks if present
-            response_text = final_response
-            if response_text.startswith("```"):
-                response_text = response_text.split("```")[1]
-                if response_text.startswith("json"):
-                    response_text = response_text[4:]
-
-            synthesis_dict = json.loads(response_text.strip())
-            synthesis_output = SynthesisOutput(**synthesis_dict)
-
-        except (json.JSONDecodeError, ValidationError) as e:
-            logger.warning(
-                "Failed to parse synthesis step response as JSON, using response text",
+            synthesis_output = SynthesisOutput(
+                final_text=response_text,
+                formatting=detected_formatting,
+            )
+        except ValidationError as e:
+            logger.error(
+                "Failed to create SynthesisOutput",
                 extra={
                     "step": "synthesize",
                     "error": str(e),
                     "response_length": len(final_response),
                 },
             )
-            # If parsing fails, create a SynthesisOutput from response text
+            # Fallback: create output with response text as-is
             synthesis_output = SynthesisOutput(
-                final_text=final_response,
-                formatting="plain",
+                final_text=response_text,
+                formatting="markdown",
             )
 
         # Track token usage and cost
