@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "prompt-chaining"
-version = "0.4.3"
+version = "0.4.4"
 description = "Prompt Chaining workflow platform with OpenAI-compatible API"
 readme = "README.md"
 license = {text = "MIT"}
