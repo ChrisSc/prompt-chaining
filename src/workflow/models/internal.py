@@ -93,22 +93,22 @@ class AggregatedTokenMetrics(BaseModel):
     Combines metrics from analyze, process, and synthesize steps.
     """
 
-    analyze_tokens: NonNegativeInt = Field(
-        default=0, description="Tokens used by analyze step"
-    )
+    analyze_tokens: NonNegativeInt = Field(default=0, description="Tokens used by analyze step")
     process_tokens: NonNegativeInt = Field(default=0, description="Tokens used by process step")
-    synthesizer_tokens: NonNegativeInt = Field(default=0, description="Tokens used by synthesize step")
+    synthesizer_tokens: NonNegativeInt = Field(
+        default=0, description="Tokens used by synthesize step"
+    )
 
     @property
     def total_tokens(self) -> int:
         """Calculate total tokens used across all steps."""
         return self.analyze_tokens + self.process_tokens + self.synthesizer_tokens
 
-    analyze_cost_usd: float = Field(
-        default=0, ge=0, description="Cost for analyze step in USD"
-    )
+    analyze_cost_usd: float = Field(default=0, ge=0, description="Cost for analyze step in USD")
     process_cost_usd: float = Field(default=0, ge=0, description="Cost for process step in USD")
-    synthesizer_cost_usd: float = Field(default=0, ge=0, description="Cost for synthesize step in USD")
+    synthesizer_cost_usd: float = Field(
+        default=0, ge=0, description="Cost for synthesize step in USD"
+    )
 
     @property
     def total_cost_usd(self) -> float:

@@ -220,6 +220,12 @@ class ChainState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     # Accumulated messages through chain - uses add_messages reducer for proper merging
 
+    request_id: str
+    # Trace ID for cross-step correlation and external API calls
+
+    user_id: str
+    # User identifier from JWT sub claim for multi-tenant tracking
+
     analysis: dict[str, Any] | None
     # Output from analysis step containing intent, entities, complexity
 
@@ -235,6 +241,8 @@ class ChainState(TypedDict):
 
 **Key Features**:
 - **Message Accumulation**: `add_messages` reducer merges new messages with existing ones, maintaining conversation continuity
+- **Request Tracing**: `request_id` enables cross-step correlation and propagates to Anthropic API calls
+- **User Tracking**: `user_id` from JWT authentication enables multi-tenant filtering and user-specific debugging
 - **Step Outputs**: Each step populates its own field (analysis, processed_content, final_response)
 - **Metadata Tracking**: Captures timing, costs, and other observability metrics across all steps
 
@@ -694,16 +702,157 @@ TemplateServiceError (base)
 
 **Purpose**: End-to-end request tracing through entire system for debugging and observability.
 
-**Flow**: Client Request → Middleware (extracts/generates) → contextvars.ContextVar → Steps → Anthropic API (header included)
+**Flow**: Client Request → Middleware (extracts/generates) → contextvars.ContextVar → Logs/State → Anthropic API (header included)
 
-**Implementation**:
-- Middleware checks/generates `X-Request-ID` header, stores in `ContextVar`
-- Steps retrieve via `get_request_id()`, pass to Anthropic API via `extra_headers`
-- Context auto-isolated per async task
+**Implementation Details**:
 
-**Benefits**: Debug client requests at Anthropic API, trace request path, filter logs by request_id, correlate timing/tokens.
+1. **Middleware Layer** (`src/workflow/middleware/request_id.py`):
+   - Checks incoming request for `X-Request-ID` header
+   - Generates new UUID-based ID if not provided: `req_{timestamp}`
+   - Stores in `ContextVar` via `set_request_id()` for async-safe propagation
+   - Adds `X-Request-ID` to response headers
 
-**Example**: Client sends `X-Request-ID: req_client_123` → appears in all logs and Anthropic API calls with same ID for end-to-end correlation.
+2. **Auto-Injection into Logs** (`src/workflow/utils/logging.py`):
+   - `JSONFormatter.format()` retrieves request_id from `get_request_id()`
+   - Automatically adds `request_id` field to every log entry
+   - No manual `extra={"request_id": ...}` needed in log calls
+   - Example: `logger.info("Step completed")` → includes request_id automatically
+
+3. **LangGraph State Propagation** (`src/workflow/models/chains.py`):
+   - `ChainState` TypedDict includes `request_id: str` field
+   - Initial state populated with request_id from context
+   - Flows through all steps: analyze → process → synthesize
+   - Enables request tracking within workflow state
+
+4. **Anthropic API Propagation** (`src/workflow/chains/steps.py`):
+   - Each step function retrieves request_id from `ChainState`
+   - Passed to `ChatAnthropic` via `extra_headers` parameter:
+     ```python
+     ChatAnthropic(
+         model=config.analyze.model,
+         extra_headers={"X-Request-ID": state.get("request_id", "")},
+     )
+     ```
+   - Anthropic API logs include the request_id for distributed tracing
+
+**Context Isolation**:
+- `ContextVar` provides automatic async-safe isolation per request
+- Each async request gets independent context
+- No risk of request_id collision between concurrent requests
+
+**Benefits**:
+- Debug client requests at Anthropic API level
+- Trace complete request path through all layers
+- Filter logs by request_id for focused debugging
+- Correlate timing, tokens, and costs across steps
+- Multi-tenant request isolation
+
+**Example**: Client sends `X-Request-ID: req_client_123` → appears in all logs, workflow state, and Anthropic API calls with same ID for end-to-end correlation.
+
+## User Context Propagation
+
+**Purpose**: Track user identity across the entire request lifecycle for multi-tenant logging, debugging, and security auditing.
+
+**Flow**: JWT Authentication → Extract `sub` Claim → contextvars.ContextVar → Auto-Inject into Logs
+
+**Implementation Details**:
+
+1. **JWT Authentication Boundary** (`src/workflow/api/dependencies.py`):
+   - `verify_bearer_token()` decodes JWT and extracts payload
+   - Retrieves `sub` claim (user identifier) from JWT token
+   - Stores in context via `set_user_context(user_id)` for async propagation
+   - Example: JWT with `{"sub": "alice@example.com"}` → stored as user_id
+
+2. **Context Variable Storage** (`src/workflow/utils/user_context.py`):
+   - `_user_context_var: ContextVar[str | None]` stores user ID
+   - `set_user_context(user_id)`: Stores user ID in async-safe context
+   - `get_user_context()`: Retrieves user ID from context (returns None if not set)
+   - Async-safe isolation per request (same as request_id)
+
+3. **Auto-Injection into Logs** (`src/workflow/utils/logging.py`):
+   - `JSONFormatter.format()` retrieves user_id from `get_user_context()`
+   - Automatically adds `user_id` field to every log entry after authentication
+   - No manual logging required
+   - Example: `logger.info("Processing started")` → includes user_id automatically
+
+4. **LangGraph State Propagation** (`src/workflow/models/chains.py`):
+   - `ChainState` TypedDict includes `user_id: str` field
+   - Initial state populated with user_id from context after JWT verification
+   - Flows through all workflow steps for user-specific tracking
+
+**Benefits**:
+- **Multi-Tenant Filtering**: Query logs by user_id to isolate activity per tenant/user
+- **User-Specific Debugging**: Trace all operations for a specific user across requests
+- **Security Auditing**: Track user actions for compliance and security investigations
+- **Cost Attribution**: Associate token usage and costs with specific users
+- **No Manual Logging**: Automatic injection eliminates boilerplate code
+
+**Example**: User "alice@example.com" makes request → all logs include `"user_id": "alice@example.com"` → filter logs: `jq 'select(.user_id=="alice@example.com")' logs.json`
+
+## Context Variables
+
+The application uses Python `contextvars` to manage request-scoped metadata in an async-safe manner. Context variables provide automatic isolation per async task, ensuring no collision between concurrent requests.
+
+**Context Variables Defined**:
+
+### request_id Context Variable
+
+**Module**: `src/workflow/utils/request_context.py`
+
+**Purpose**: Store and retrieve request ID for distributed tracing
+
+**Definition**:
+```python
+_request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
+```
+
+**Functions**:
+- `set_request_id(request_id: str)`: Stores request ID in context
+- `get_request_id() -> str | None`: Retrieves request ID from context
+
+**Lifecycle**:
+1. Request enters system via middleware
+2. Middleware generates/extracts request_id from `X-Request-ID` header
+3. Stored via `set_request_id(request_id)` in middleware
+4. Retrieved via `get_request_id()` by:
+   - JSONFormatter for automatic log injection
+   - Workflow initialization to populate ChainState
+   - Step functions to propagate to Anthropic API
+
+### user_id Context Variable
+
+**Module**: `src/workflow/utils/user_context.py`
+
+**Purpose**: Store and retrieve user identity for multi-tenant tracking
+
+**Definition**:
+```python
+_user_context_var: ContextVar[str | None] = ContextVar("user_context", default=None)
+```
+
+**Functions**:
+- `set_user_context(user_id: str)`: Stores user ID in context
+- `get_user_context() -> str | None`: Retrieves user ID from context
+
+**Lifecycle**:
+1. Request passes through JWT authentication
+2. `verify_bearer_token()` extracts `sub` claim from JWT payload
+3. Stored via `set_user_context(user_id)` at auth boundary
+4. Retrieved via `get_user_context()` by:
+   - JSONFormatter for automatic log injection
+   - Workflow initialization to populate ChainState
+
+**Async Safety**:
+- `ContextVar` instances are automatically isolated per async task
+- Each concurrent request maintains independent context
+- No manual context passing needed across function calls
+- Context automatically cleaned up when async task completes
+
+**Benefits**:
+- **Zero Boilerplate**: No need to pass request_id/user_id through function signatures
+- **Automatic Propagation**: Context available anywhere in the call stack
+- **Concurrency Safety**: No risk of cross-request contamination
+- **Clean Code**: Business logic unaware of tracing concerns
 
 ## Performance Monitoring & Metrics
 

@@ -79,6 +79,9 @@ class CircuitBreaker:
         self.failure_count = 0
         self.success_count = 0
         self.last_failure_time: float | None = None
+        self.recovery_attempt_count = 0
+        self.consecutive_recovery_failures = 0
+        self.max_recovery_attempts = 3  # Mark as unrecoverable after 3 recovery attempts fail
 
         logger.info(
             f"Circuit breaker initialized for {service_name}",
@@ -120,10 +123,16 @@ class CircuitBreaker:
                 self.failure_count = 0
                 self.success_count = 0
                 self.last_failure_time = None
+                # Reset recovery failure tracking on successful recovery
+                self.consecutive_recovery_failures = 0
 
                 logger.info(
                     f"Circuit breaker closed for {self.service_name} - service recovered",
-                    extra={"service": self.service_name, "state": self.state.value},
+                    extra={
+                        "service": self.service_name,
+                        "state": self.state.value,
+                        "recovery_attempt_count": self.recovery_attempt_count,
+                    },
                 )
         else:
             # Normal operation - reset counters
@@ -139,15 +148,33 @@ class CircuitBreaker:
             self.state = CircuitBreakerState.OPEN
             self.failure_count += 1
             self.success_count = 0
+            self.consecutive_recovery_failures += 1
+            self.recovery_attempt_count += 1
 
-            logger.warning(
-                f"Circuit breaker reopened for {self.service_name} - half-open test failed",
-                extra={
-                    "service": self.service_name,
-                    "state": self.state.value,
-                    "failure_count": self.failure_count,
-                },
-            )
+            # Check if service is unrecoverable after multiple recovery attempts
+            if self.consecutive_recovery_failures >= self.max_recovery_attempts:
+                logger.critical(
+                    f"Circuit breaker - service deemed unrecoverable for {self.service_name}",
+                    extra={
+                        "service": self.service_name,
+                        "state": self.state.value,
+                        "consecutive_recovery_failures": self.consecutive_recovery_failures,
+                        "recovery_attempt_count": self.recovery_attempt_count,
+                        "max_recovery_attempts": self.max_recovery_attempts,
+                        "failure_count": self.failure_count,
+                    },
+                )
+            else:
+                logger.warning(
+                    f"Circuit breaker reopened for {self.service_name} - half-open test failed",
+                    extra={
+                        "service": self.service_name,
+                        "state": self.state.value,
+                        "failure_count": self.failure_count,
+                        "consecutive_recovery_failures": self.consecutive_recovery_failures,
+                        "recovery_attempt_count": self.recovery_attempt_count,
+                    },
+                )
         else:
             # CLOSED state - count failures
             self.failure_count += 1
@@ -174,6 +201,37 @@ class CircuitBreaker:
                         "threshold": self.failure_threshold,
                     },
                 )
+
+    def get_state_dump(self) -> dict[str, Any]:
+        """
+        Get a structured dump of the circuit breaker's current state.
+
+        Returns a dictionary with all relevant state information suitable for logging
+        as structured extra fields. Useful for monitoring and debugging.
+
+        Returns:
+            Dictionary containing:
+            - state: Current state (closed/open/half_open)
+            - failure_count: Current consecutive failures
+            - success_count: Successful tests in half-open state
+            - failure_threshold: Failures needed to open circuit
+            - timeout: Seconds to wait before attempting recovery
+            - half_open_attempts: Tests needed to close circuit from half-open
+            - recovery_attempt_count: Total recovery attempts made
+            - consecutive_recovery_failures: Recent recovery failures
+            - max_recovery_attempts: Threshold for deeming service unrecoverable
+        """
+        return {
+            "state": self.state.value,
+            "failure_count": self.failure_count,
+            "success_count": self.success_count,
+            "failure_threshold": self.failure_threshold,
+            "timeout": self.timeout,
+            "half_open_attempts": self.half_open_attempts,
+            "recovery_attempt_count": self.recovery_attempt_count,
+            "consecutive_recovery_failures": self.consecutive_recovery_failures,
+            "max_recovery_attempts": self.max_recovery_attempts,
+        }
 
     def allow_request(self) -> bool:
         """
