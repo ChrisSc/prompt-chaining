@@ -8,7 +8,7 @@
 ![OpenAI API](https://img.shields.io/badge/OpenAI-API-412991?logo=openai)
 ![GitHub Template](https://img.shields.io/badge/GitHub-Template-blue?logo=github)
 
-A *github repository template* for scaffolding **turn-key prompt-chaining workflows** with Anthropic's Claude and OpenAI-compatible APIs. Built on the proven prompt-chaining pattern: sequential steps (Analysis, Processing, Synthesis) orchestrated by LangGraph StateGraph with validation gates between steps.
+A *github repository template* for scaffolding **turnkey prompt-chaining workflows** with Anthropic's Claude and OpenAI-compatible APIs. Built on the proven prompt-chaining pattern: sequential steps (Analysis, Processing, Synthesis) orchestrated by LangGraph StateGraph with validation gates between steps.
 
 **Observability-first architecture**: Unlike traditional agentic frameworks where observability is retrofitted, this template treats observability as a foundational design principle. Every request gets automatic distributed tracing via context propagation, every LLM call logs token usage and cost attribution, and every agent step tracks quality metrics—with zero manual instrumentation. Context variables (`request_id`, `user_id`) flow automatically from middleware → workflow state → external API calls → structured logs, enabling complete request reconstruction and multi-tenant debugging without boilerplate. Validation gates enforce quality boundaries between agents with full visibility into why workflows succeed or fail.
 
