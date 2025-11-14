@@ -17,7 +17,11 @@ body:
         - README.md
         - CLAUDE.md (development guide)
         - CONTRIBUTING.md
+        - ARCHITECTURE.md
+        - PROMPT-CHAINING.md
+        - BENCHMARKS.md
         - JWT_AUTHENTICATION.md
+        - API_REFERENCE.md
         - Code comments/docstrings
         - API documentation
         - Examples

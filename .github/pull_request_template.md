@@ -120,8 +120,8 @@ Related to #
 
 Before requesting a review, please confirm:
 
-- [ ] I have read [CONTRIBUTING.md](https://github.com/ChrisSc/agentic-orchestrator-worker-template/blob/main/CONTRIBUTING.md)
-- [ ] I have followed the [critical development rules](https://github.com/ChrisSc/agentic-orchestrator-worker-template/blob/main/CONTRIBUTING.md#critical-development-rules)
+- [ ] I have read [CONTRIBUTING.md](https://github.com/ChrisSc/prompt-chaining/blob/main/CONTRIBUTING.md)
+- [ ] I have followed the [critical development rules](https://github.com/ChrisSc/prompt-chaining/blob/main/CONTRIBUTING.md#critical-development-rules)
 - [ ] My code uses relative imports (`workflow.*`, not `src.workflow.*`)
 - [ ] My code uses async/await for all I/O operations
 - [ ] I have tested with `fastapi dev`, not `uvicorn` directly
@@ -131,6 +131,17 @@ Before requesting a review, please confirm:
 - [ ] My changes generate no new warnings or errors
 - [ ] I have checked my code for security implications
 - [ ] This PR is focused on a single concern (not multiple unrelated changes)
+
+---
+
+## Prompt-Chaining Specific
+
+- [ ] System prompts output valid JSON matching Pydantic models (AnalysisOutput, ProcessOutput, SynthesisOutput)
+- [ ] Validation gates tested for both pass and fail paths
+- [ ] Chain step configuration verified (model, tokens, temperature, timeout)
+- [ ] Streaming synthesis tested if response involves streaming
+- [ ] Per-step token tracking and cost calculation verified
+- [ ] Error messages use step-based terminology (analyze/process/synthesize, not "phase")
 
 ---
 

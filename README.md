@@ -162,7 +162,7 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed state flow, conditional ed
 - Per-step optimization valuable
 
 **Not Ideal For**:
-- Parallel independent tasks (use orchestrator-worker pattern)
+- Parallel independent tasks (consider alternative orchestration patterns)
 - Simple single-turn requests
 - Real-time bidirectional conversations
 
@@ -256,7 +256,7 @@ See [CLAUDE.md](./CLAUDE.md#development-workflow) for development workflow detai
 **Request** (OpenAI-compatible):
 ```json
 {
-  "model": "orchestrator-worker",
+  "model": "prompt-chaining",
   "messages": [{"role": "user", "content": "Your prompt"}],
   "max_tokens": 2000
 }

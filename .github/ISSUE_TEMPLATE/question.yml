@@ -8,7 +8,7 @@ body:
       value: |
         Have a question about using the template? We're here to help!
 
-        **Note:** For general discussions or broader topics, consider using [GitHub Discussions](https://github.com/ChrisSc/agentic-orchestrator-worker-template/discussions) instead.
+        **Note:** For general discussions or broader topics, consider using [GitHub Discussions](https://github.com/ChrisSc/prompt-chaining/discussions) instead.
 
   - type: textarea
     id: question
@@ -39,7 +39,11 @@ body:
       options:
         - Setup and installation
         - Development workflow
-        - Multi-agent architecture
+        - Prompt-chaining workflow (analyze/process/synthesize)
+        - Chain configuration (model selection, tokens, temperature, timeout)
+        - Validation gates
+        - Streaming responses
+        - Token tracking and costs
         - Customization and extension
         - Testing
         - Authentication (JWT)
@@ -83,9 +87,9 @@ body:
       label: Pre-submission Checklist
       description: Please confirm you've checked these resources first
       options:
-        - label: I have read the [CLAUDE.md](https://github.com/ChrisSc/agentic-orchestrator-worker-template/blob/main/CLAUDE.md) documentation
+        - label: I have read the [CLAUDE.md](https://github.com/ChrisSc/prompt-chaining/blob/main/CLAUDE.md) documentation
           required: true
-        - label: I have checked the [Common Issues](https://github.com/ChrisSc/agentic-orchestrator-worker-template/blob/main/CONTRIBUTING.md#common-issues--troubleshooting) section
+        - label: I have checked the [Common Issues](https://github.com/ChrisSc/prompt-chaining/blob/main/CONTRIBUTING.md#common-issues--troubleshooting) section
           required: true
         - label: I have searched existing issues and discussions
           required: true
