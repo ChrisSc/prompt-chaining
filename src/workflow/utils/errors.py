@@ -123,9 +123,9 @@ class SessionError(TemplateServiceError):
 
 class StreamingTimeoutError(TemplateServiceError):
     """
-    Raised when a streaming operation exceeds its configured timeout.
+    Raised when a workflow step exceeds its configured timeout.
 
-    Indicates that worker coordination or synthesis phases took too long to complete.
+    Indicates that a step (analyze, process, or synthesize) took too long to complete.
     """
 
     def __init__(self, phase: str, timeout_seconds: int) -> None:
@@ -133,7 +133,7 @@ class StreamingTimeoutError(TemplateServiceError):
         Initialize a streaming timeout error.
 
         Args:
-            phase: The phase that timed out (e.g., "worker coordination", "synthesis")
+            phase: The step that timed out (e.g., "analyze", "process", "synthesize")
             timeout_seconds: The timeout duration in seconds
         """
         message = f"Streaming operation timed out during {phase} phase after {timeout_seconds}s"

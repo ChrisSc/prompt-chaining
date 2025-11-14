@@ -36,23 +36,21 @@ async def get_chain_graph(request: Request) -> Any:
     """
     Dependency to get the compiled LangGraph chain graph from app state.
 
-    Returns the chain graph if available and initialized, otherwise None
-    to allow fallback to orchestrator mode.
+    Returns the initialized chain graph for prompt-chaining execution.
 
     Args:
         request: FastAPI request object
 
     Returns:
-        Compiled LangGraph StateGraph or None if not available
+        Compiled LangGraph StateGraph instance
 
     Raises:
-        HTTPException: If service is not ready
+        HTTPException: If service initialization failed
     """
-    # Check if chain graph is available
     chain_graph = getattr(request.app.state, "chain_graph", None)
 
     if chain_graph is None:
-        logger.debug("Chain graph not available, will fall back to orchestrator mode")
+        logger.debug("Chain graph not available")
 
     return chain_graph
 
@@ -66,85 +64,29 @@ async def create_chat_completion(
     token: dict = Depends(verify_bearer_token),
 ):
     """
-    Stream chat completions using multi-agent orchestration with phase-specific timeouts.
+    Stream chat completions through the prompt-chaining workflow.
 
-    Processes chat messages through the Orchestrator agent and returns a streaming response
-    using Server-Sent Events (SSE). Enforces separate timeouts for worker coordination and
-    synthesis phases to prevent runaway requests.
-
-    Request Processing Phases:
-    1. Worker Coordination Phase: Orchestrator decomposes task, spawns workers, and collects
-       results in parallel. Maximum duration controlled by WORKER_COORDINATION_TIMEOUT
-       (default 45s).
-    2. Synthesis Phase: Synthesizer aggregates results and streams final response. Maximum
-       duration controlled by SYNTHESIS_TIMEOUT (default 30s).
-
-    Timeout Behavior:
-    - If worker coordination exceeds WORKER_COORDINATION_TIMEOUT, all pending workers are
-      cancelled and an error event is sent via SSE.
-    - If synthesis exceeds SYNTHESIS_TIMEOUT, the stream terminates with an error event.
-    - Error events include phase, timeout duration, and human-readable message.
-    - Total request budget = WORKER_COORDINATION_TIMEOUT + SYNTHESIS_TIMEOUT (default: 75s).
-
-    Error Handling:
-    - Timeout errors are sent as Server-Sent Events with type "streaming_timeout_error"
-    - Client disconnections (EOF) are handled gracefully without error propagation
-    - External service errors include service details and retry information
-    - Unexpected errors trigger a generic server error event
+    Executes three sequential steps (analyze → process → synthesize) and returns
+    streaming response via Server-Sent Events (SSE). Each step has independent
+    timeout configuration.
 
     Args:
-        request_data: ChatCompletionRequest containing model ID, messages list, and optional
-                      parameters (max_tokens, temperature, etc.)
-        orchestrator: Orchestrator agent instance (injected via dependency)
-        token: JWT bearer token payload (injected via dependency, validates authorization)
+        request_data: ChatCompletionRequest with model, messages, and parameters
+        chain_graph: Compiled LangGraph StateGraph (injected via dependency)
+        token: JWT bearer token payload (validates authorization)
 
     Returns:
-        StreamingResponse with SSE-formatted ChatCompletionChunk events:
-        - Each event prefixed with "data: " followed by JSON
-        - Stream terminated with "data: [DONE]\\n\\n"
-        - Error events include structured error information
+        StreamingResponse with SSE-formatted ChatCompletionChunk events.
+        Stream terminates with "data: [DONE]\\n\\n"
 
     Raises:
-        HTTPException: If service is starting up or orchestrator unavailable (503)
-        StreamingTimeoutError: If worker or synthesis phase exceeds configured timeout
-                              (sent as SSE event, not HTTP error)
-        ExternalServiceError: If upstream API call fails (sent as SSE event)
-        ValidationError: If request data fails Pydantic validation
-
-    Example:
-        Request with curl:
-        ```bash
-        TOKEN=$(python scripts/generate_jwt.py)
-        curl -X POST http://localhost:8000/v1/chat/completions \\
-          -H "Authorization: Bearer $TOKEN" \\
-          -H "Content-Type: application/json" \\
-          -N \\
-          -d '{
-            "model": "orchestrator-worker",
-            "messages": [{"role": "user", "content": "Analyze this topic"}],
-            "max_tokens": 500
-          }'
-        ```
-
-        Successful streaming response:
-        ```
-        data: {"object":"chat.completion.chunk","choices":[{"delta":{"content":"Analysis"}}]}
-
-        data: {"object":"chat.completion.chunk","choices":[{"delta":{"content":" starts here"}}]}
-
-        data: [DONE]
-        ```
-
-        Timeout error response:
-        ```
-        data: {"error":{"message":"Streaming operation timed out during worker coordination phase after 45s","type":"streaming_timeout_error","phase":"worker coordination","timeout_seconds":45}}
-
-        data: [DONE]
-        ```
+        HTTPException: If chain graph unavailable (503)
+        StreamingTimeoutError: If step exceeds timeout (sent as SSE event)
+        ExternalServiceError: If upstream API fails (sent as SSE event)
 
     See Also:
-        - CLAUDE.md - Request Timeout Enforcement section for configuration details
-        - JWT_AUTHENTICATION.md - Bearer token generation and usage
+        CLAUDE.md - Configuration and timeout details
+        JWT_AUTHENTICATION.md - Bearer token usage
     """
     request_start_time = time.time()
 
@@ -204,7 +146,6 @@ async def create_chat_completion(
                 chain_graph, initial_state, settings.chain_config
             ):
                 # Handle synthesize_tokens events from custom streaming
-                # These are individual tokens emitted by synthesize_step via get_stream_writer()
                 if "synthesize_tokens" in state_update:
                     try:
                         token_event = state_update.get("synthesize_tokens", {})
@@ -248,10 +189,6 @@ async def create_chat_completion(
                         step_metadata = node_update.get("step_metadata", {})
                         if isinstance(step_metadata, dict):
                             final_step_metadata.update(step_metadata)
-
-                # Note: Custom token streaming via get_stream_writer() in synthesize_step
-                # should emit "synthesize_tokens" events above
-                # If those aren't present, it means streaming context wasn't available
 
                 # Skip convert_langchain_chunk_to_openai if we already handled this state update
                 if "synthesize_tokens" in state_update or "synthesize" in state_update:

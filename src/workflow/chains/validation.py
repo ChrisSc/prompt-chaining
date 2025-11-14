@@ -45,16 +45,11 @@ class ValidationGate:
         """
         Validate data against the configured schema.
 
-        Performs basic Pydantic schema validation. Subclasses should override
-        this method to add additional business logic validation.
-
         Args:
             data: Dictionary of data to validate
 
         Returns:
-            Tuple of (is_valid, error_message):
-            - is_valid (bool): True if validation passed, False otherwise
-            - error_message (str | None): Error message if validation failed, None if valid
+            Tuple of (is_valid, error_message)
         """
         try:
             self.schema.model_validate(data)
@@ -89,18 +84,13 @@ class AnalysisValidationGate(ValidationGate):
         """
         Validate analysis step output.
 
-        Performs schema validation and business logic checks:
-        1. Validates against AnalysisOutput schema
-        2. Ensures intent field is present and non-empty
-        3. Checks that key_entities is a valid list
+        Checks schema conformance and ensures intent is non-empty.
 
         Args:
             data: Dictionary containing analysis output
 
         Returns:
-            Tuple of (is_valid, error_message):
-            - is_valid (bool): True if all validations passed
-            - error_message (str | None): Descriptive error message if validation failed
+            Tuple of (is_valid, error_message)
         """
         # First perform schema validation
         is_valid, error_message = super().validate(data)
@@ -147,19 +137,13 @@ class ProcessValidationGate(ValidationGate):
         """
         Validate processing step output.
 
-        Performs schema validation and business logic checks:
-        1. Validates against ProcessOutput schema
-        2. Ensures content is present and non-empty
-        3. Validates confidence score is >= 0.5
-        4. Checks metadata structure (if provided)
+        Checks schema conformance, content non-empty, and confidence >= 0.5.
 
         Args:
             data: Dictionary containing process output
 
         Returns:
-            Tuple of (is_valid, error_message):
-            - is_valid (bool): True if all validations passed
-            - error_message (str | None): Descriptive error message if validation failed
+            Tuple of (is_valid, error_message)
         """
         # First perform schema validation
         is_valid, error_message = super().validate(data)

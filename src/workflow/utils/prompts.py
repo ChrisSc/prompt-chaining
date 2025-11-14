@@ -16,10 +16,10 @@ PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
 def load_prompt(agent_name: str, fallback: str | None = None) -> str:
     """
-    Load system prompt for an agent from file.
+    Load system prompt from file.
 
     Args:
-        agent_name: Name of the agent (e.g., 'orchestrator', 'worker')
+        agent_name: Name of the prompt (e.g., 'analyze', 'process', 'synthesize')
         fallback: Optional fallback prompt if file not found
 
     Returns:

@@ -49,9 +49,9 @@ class ServiceRequest(BaseModel):
     user_id: str | None = Field(default=None, description="Optional user identifier")
 
 
-# Multi-agent coordination models
-# Legacy domain models from orchestrator-worker pattern.
-# These serve as examples for users customizing their own models.
+# Multi-step coordination models
+# Template domain models for prompt-chaining workflow.
+# Customize these classes for your specific use case.
 
 
 class TokenUsage(BaseModel):
@@ -90,41 +90,38 @@ class AggregatedTokenMetrics(BaseModel):
     """
     Aggregated token metrics for an entire request.
 
-    Combines metrics from orchestrator, workers, and synthesizer.
+    Combines metrics from analyze, process, and synthesize steps.
     """
 
-    orchestrator_tokens: NonNegativeInt = Field(
-        default=0, description="Tokens used by orchestrator"
+    analyze_tokens: NonNegativeInt = Field(
+        default=0, description="Tokens used by analyze step"
     )
-    worker_tokens: NonNegativeInt = Field(default=0, description="Total tokens used by all workers")
-    synthesizer_tokens: NonNegativeInt = Field(default=0, description="Tokens used by synthesizer")
+    process_tokens: NonNegativeInt = Field(default=0, description="Tokens used by process step")
+    synthesizer_tokens: NonNegativeInt = Field(default=0, description="Tokens used by synthesize step")
 
     @property
     def total_tokens(self) -> int:
-        """Calculate total tokens used across all agents."""
-        return self.orchestrator_tokens + self.worker_tokens + self.synthesizer_tokens
+        """Calculate total tokens used across all steps."""
+        return self.analyze_tokens + self.process_tokens + self.synthesizer_tokens
 
-    orchestrator_cost_usd: float = Field(
-        default=0, ge=0, description="Cost for orchestrator in USD"
+    analyze_cost_usd: float = Field(
+        default=0, ge=0, description="Cost for analyze step in USD"
     )
-    worker_cost_usd: float = Field(default=0, ge=0, description="Total cost for workers in USD")
-    synthesizer_cost_usd: float = Field(default=0, ge=0, description="Cost for synthesizer in USD")
+    process_cost_usd: float = Field(default=0, ge=0, description="Cost for process step in USD")
+    synthesizer_cost_usd: float = Field(default=0, ge=0, description="Cost for synthesize step in USD")
 
     @property
     def total_cost_usd(self) -> float:
         """Calculate total cost in USD."""
-        return self.orchestrator_cost_usd + self.worker_cost_usd + self.synthesizer_cost_usd
+        return self.analyze_cost_usd + self.process_cost_usd + self.synthesizer_cost_usd
 
 
 class TaskRequest(BaseModel):
     """
     Example model - customize for your domain.
 
-    Legacy model from orchestrator-worker pattern that shows how to structure
-    requests between coordinating agents. Customize for your specific use case.
-
-    The Orchestrator creates TaskRequests and sends them to Worker instances,
-    which respond with TaskResults.
+    Template model showing how to structure requests for multi-step processing.
+    Customize for your specific use case and domain requirements.
     """
 
     task_id: int = Field(ge=1, description="Unique task identifier")
@@ -143,10 +140,8 @@ class TaskResult(BaseModel):
     """
     Example model - customize for your domain.
 
-    Legacy model from orchestrator-worker pattern that shows how to structure
-    results returned from worker agents. Customize for your specific use case.
-
-    Contains the output from executing a single task.
+    Template model showing how to structure results from task execution.
+    Customize for your specific use case and domain requirements.
     """
 
     task_id: int = Field(ge=1, description="Task identifier this result corresponds to")
@@ -167,11 +162,8 @@ class AggregatedResult(BaseModel):
     """
     Example model - customize for your domain.
 
-    Legacy model from orchestrator-worker pattern that shows how to aggregate
-    results from multiple workers. Customize for your specific use case.
-
-    The Orchestrator collects TaskResults from all workers and combines them
-    into a final response.
+    Template model showing how to aggregate results from all steps.
+    Customize for your specific use case and domain requirements.
     """
 
     num_tasks: int = Field(ge=1, description="Number of tasks executed")

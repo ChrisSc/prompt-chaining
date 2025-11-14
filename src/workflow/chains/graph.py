@@ -39,20 +39,16 @@ logger = get_logger(__name__)
 
 async def error_step(state: ChainState, config: ChainConfig) -> dict[str, Any]:
     """
-    Handle errors in the prompt-chaining workflow.
+    Handle errors in the workflow.
 
-    This step is executed when validation gates or processing steps fail.
-    It extracts error information from the state and creates a user-friendly
-    error response, then returns state updates with the error message.
+    Executed when validation gates or steps fail. Creates user-friendly error response.
 
     Args:
-        state: Current ChainState containing any error context
-        config: ChainConfig for error handling configuration
+        state: ChainState with error context
+        config: ChainConfig for configuration
 
     Returns:
-        Dictionary with state updates:
-        - final_response: Error message for the user
-        - step_metadata: Error tracking information
+        Dict with final_response and step_metadata
     """
     logger.warning("Error step executed - workflow validation or processing failed")
 
@@ -93,19 +89,11 @@ def build_chain_graph(config: ChainConfig) -> Any:
     """
     Build and compile the LangGraph StateGraph for prompt-chaining.
 
-    Creates a complete graph with:
-    - START node connecting to "analyze" step
-    - "analyze" step with conditional edge to "process" or "error"
-    - "process" step with conditional edge to "synthesize" or "error"
-    - "synthesize" step terminal edge to END
-    - "error" step terminal edge to END
-
-    Validation gates between steps ensure quality outputs:
-    - After analyze: should_proceed_to_process validates AnalysisOutput
-    - After process: should_proceed_to_synthesize validates ProcessOutput
+    Creates graph: START → analyze → process → synthesize → END
+    Validation gates between steps ensure quality outputs.
 
     Args:
-        config: ChainConfig with model selection, token limits, and timeouts
+        config: ChainConfig with model, token limits, and timeouts
 
     Returns:
         Compiled StateGraph ready for execution
@@ -259,28 +247,19 @@ async def stream_chain(
     """
     Stream the prompt-chaining graph execution with async generator interface.
 
-    Executes the graph with streaming enabled (astream), yielding state updates
-    from each step. All steps (analyze, process, synthesize) are non-streaming
-    at the LangGraph node level and return single dictionaries. State updates are
-    yielded for each step completion.
-
-    Streaming for HTTP SSE delivery to clients happens at the FastAPI endpoint
-    level, where final_response is streamed back to users. This architecture
-    ensures LangGraph nodes follow the single-dict-return pattern while still
-    supporting streaming responses to end users.
+    Yields state updates from each step using astream. Synthesize step streams tokens
+    via get_stream_writer() for real-time delivery.
 
     Args:
         graph: Compiled LangGraph StateGraph
-        initial_state: Initial ChainState to start execution with
-        config: ChainConfig for the chain execution
+        initial_state: Initial ChainState for execution
+        config: ChainConfig for execution
 
     Yields:
-        Dictionary state updates from each step, containing accumulated results
-        and metadata. Later updates merge with earlier ones via ChainState reducers.
+        Dict state updates from each step with accumulated results and metadata
 
     Raises:
-        ValueError: If graph execution fails
-        asyncio.TimeoutError: If execution exceeds phase timeouts
+        asyncio.TimeoutError: If execution exceeds timeout
     """
     logger.debug(
         "Starting streaming chain execution",

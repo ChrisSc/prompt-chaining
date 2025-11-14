@@ -290,7 +290,7 @@ def convert_langchain_chunk_to_openai(
             id=f"chatcmpl-{int(time.time() * 1000)}",
             object="chat.completion.chunk",
             created=int(time.time()),
-            model="orchestrator-worker",
+            model="prompt-chaining",
             choices=[choice],
         )
 
