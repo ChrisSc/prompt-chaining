@@ -91,6 +91,19 @@ body:
       description: Add any other context about the problem here
       placeholder: Screenshots, related issues, attempted fixes, etc.
 
+  - type: dropdown
+    id: chain-step
+    attributes:
+      label: Chain Step Affected
+      description: Which step in the prompt-chaining workflow is experiencing issues?
+      options:
+        - Analysis step (intent extraction)
+        - Processing step (content generation)
+        - Synthesis step (formatting/streaming)
+        - Validation gates
+        - Multiple steps / Not sure
+      default: 4
+
   - type: checkboxes
     id: checklist
     attributes:
@@ -99,7 +112,7 @@ body:
       options:
         - label: I have searched existing issues to ensure this is not a duplicate
           required: true
-        - label: I have reviewed the [CLAUDE.md](https://github.com/ChrisSc/agentic-orchestrator-worker-template/blob/main/CLAUDE.md) documentation
+        - label: I have reviewed the [CLAUDE.md](https://github.com/ChrisSc/prompt-chaining/blob/main/CLAUDE.md) documentation
           required: true
-        - label: I have checked the [Common Issues](https://github.com/ChrisSc/agentic-orchestrator-worker-template/blob/main/CONTRIBUTING.md#common-issues--troubleshooting) section
+        - label: I have checked the [Common Issues](https://github.com/ChrisSc/prompt-chaining/blob/main/CONTRIBUTING.md#common-issues--troubleshooting) section
           required: true

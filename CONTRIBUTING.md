@@ -1,6 +1,6 @@
-# Contributing to Agentic Orchestrator Worker Template
+# Contributing to Prompt-Chaining Template
 
-Thank you for your interest in contributing! This template provides the foundation for building multi-agent orchestration services, and we value contributions that improve the template for everyone.
+Thank you for your interest in contributing! This template provides the foundation for building prompt-chaining workflows with sequential AI processing steps, and we value contributions that improve the template for everyone.
 
 ## Table of Contents
 
@@ -27,7 +27,7 @@ This project adheres to a Code of Conduct that we expect all contributors to fol
 
 This is a **template project** designed for customization, not a finished application. It provides:
 
-- Multi-agent orchestration pattern (Orchestrator → Workers → Synthesizer)
+- Three-step sequential prompt-chaining workflow (Analyze → Process → Synthesize) using LangGraph StateGraph
 - OpenAI-compatible API endpoints with FastAPI
 - JWT bearer authentication
 - Streaming responses with Server-Sent Events
@@ -58,8 +58,8 @@ We welcome contributions that:
 
 ```bash
 # Clone or fork the repository
-git clone https://github.com/yourusername/agentic-orchestrator-worker-template.git
-cd agentic-orchestrator-worker-template
+git clone https://github.com/ChrisSc/prompt-chaining.git
+cd prompt-chaining
 
 # Create virtual environment
 python -m venv .venv
@@ -108,7 +108,7 @@ These rules are **non-negotiable** and must be followed in all contributions:
 **✅ Correct:**
 ```python
 from workflow.config import Settings
-from workflow.agents.base import Agent
+from workflow.chains.steps import analyze
 ```
 
 **❌ Wrong:**
@@ -153,8 +153,8 @@ All functions and methods must have complete type hints:
 from typing import AsyncIterator
 from workflow.models.openai import ChatCompletionChunk
 
-async def process(self, request: TaskRequest) -> AsyncIterator[ChatCompletionChunk]:
-    """Process a task request and yield streaming chunks."""
+async def analyze(self, request: ChatCompletionRequest) -> AsyncIterator[ChatCompletionChunk]:
+    """Analyze a request and yield streaming chunks."""
     # Implementation
 ```
 
@@ -260,14 +260,13 @@ Use pytest-asyncio for async tests:
 import pytest
 
 @pytest.mark.asyncio
-async def test_agent_process():
-    agent = Worker()
-    await agent.initialize()
+async def test_analyze_step():
+    from workflow.chains.steps import analyze
 
-    result = await agent.process_task(task_request)
+    result = await analyze(state)
 
-    assert result.success is True
-    await agent.shutdown()
+    assert result.intent is not None
+    assert result.entities is not None
 ```
 
 ### Test Organization
@@ -325,11 +324,11 @@ All three must pass before creating a PR.
 
 **These changes stay in YOUR fork:**
 
-- Update system prompts in `src/workflow/prompts/`
-- Modify internal models in `models/internal.py` for your domain
-- Customize agent logic in `agents/` for your workflows
-- Add domain-specific endpoints
-- Change model IDs, temperatures, or parameters
+- Update system prompts in `src/workflow/prompts/chain_*.md`
+- Modify internal models in `src/workflow/models/chains.py` for your domain (AnalysisOutput, ProcessOutput, SynthesisOutput)
+- Customize chain step logic in `src/workflow/chains/steps.py`
+- Add domain-specific validation in `src/workflow/chains/validation.py`
+- Change per-step model IDs, token limits, temperatures, or timeouts
 
 See [CLAUDE.md Customization Guide](CLAUDE.md#customization-guide) for details.
 

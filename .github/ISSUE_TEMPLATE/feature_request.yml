@@ -11,7 +11,7 @@ body:
         **Before submitting:**
         - For domain-specific features, consider implementing them in your fork
         - Template improvements should benefit multiple use cases
-        - See [CONTRIBUTING.md](https://github.com/ChrisSc/agentic-orchestrator-worker-template/blob/main/CONTRIBUTING.md#customization-vs-template-improvements) for guidance
+        - See [CONTRIBUTING.md](https://github.com/ChrisSc/prompt-chaining/blob/main/CONTRIBUTING.md#customization-vs-template-improvements) for guidance
 
   - type: textarea
     id: problem
@@ -106,7 +106,7 @@ body:
       options:
         - label: I have searched existing issues and discussions to ensure this is not a duplicate
           required: true
-        - label: I have reviewed the [Customization Guide](https://github.com/ChrisSc/agentic-orchestrator-worker-template/blob/main/CLAUDE.md#customization-guide) to confirm this should be a template feature
+        - label: I have reviewed the [Customization Guide](https://github.com/ChrisSc/prompt-chaining/blob/main/CLAUDE.md#customization-guide) to confirm this should be a template feature
           required: true
         - label: This feature would benefit multiple use cases, not just my specific project
           required: true
