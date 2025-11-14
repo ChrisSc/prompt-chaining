@@ -8,12 +8,28 @@ from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from workflow.config import Settings
+from workflow.utils.circuit_breaker import CircuitBreaker
 from workflow.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 # HTTPBearer security scheme
 security = HTTPBearer()
+
+
+# Global circuit breaker instance for Anthropic API calls
+def _init_circuit_breaker() -> CircuitBreaker:
+    """Initialize circuit breaker with settings from the config."""
+    settings = Settings()
+    return CircuitBreaker(
+        service_name="anthropic",
+        failure_threshold=settings.circuit_breaker_failure_threshold,
+        timeout=settings.circuit_breaker_timeout,
+        half_open_attempts=settings.circuit_breaker_half_open_attempts,
+    )
+
+
+circuit_breaker = _init_circuit_breaker()
 
 
 async def verify_bearer_token(

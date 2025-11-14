@@ -23,7 +23,6 @@ from workflow.utils.logging import get_logger
 from workflow.utils.message_conversion import (
     convert_langchain_chunk_to_openai,
     convert_openai_to_langchain_messages,
-    split_response_into_chunks,
 )
 from workflow.utils.token_tracking import aggregate_step_metrics
 

@@ -12,8 +12,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from slowapi.errors import RateLimitExceeded
 
+from workflow.api.dependencies import circuit_breaker
 from workflow.api.health import router as health_router
-from workflow.api.limiter import limiter
+from workflow.api.limiter import get_limiter_status, limiter
 from workflow.api.v1.chat import router as chat_router
 from workflow.api.v1.models import router as models_router
 from workflow.chains.graph import build_chain_graph
@@ -59,6 +60,28 @@ async def lifespan(app: FastAPI):  # type: ignore
                 "synthesize_model": settings.chain_synthesize_model,
             },
         )
+
+        # Log circuit breaker state dump
+        cb_state_dump = circuit_breaker.get_state_dump()
+        logger.info(
+            "Circuit breaker initialized with state dump",
+            extra={
+                "step": "initialization",
+                "service": "anthropic",
+                **cb_state_dump,
+            },
+        )
+
+        # Log rate limiter status
+        limiter_status = get_limiter_status()
+        logger.info(
+            "Rate limiter initialized with status",
+            extra={
+                "step": "initialization",
+                "component": "rate_limiter",
+                **limiter_status,
+            },
+        )
     except Exception as exc:
         logger.critical(
             "Failed to initialize chain graph - application cannot start",
@@ -88,7 +111,6 @@ def create_app() -> FastAPI:
     except Exception as exc:
         # Cannot use logger yet - settings failed to load
         import sys
-        import traceback
 
         print(f"CRITICAL: Failed to load settings: {exc}", file=sys.stderr)
         raise

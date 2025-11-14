@@ -8,26 +8,19 @@ Tests verify:
 4. JSON log structure validation across all log levels
 """
 
-import os
 import subprocess
 import time
-from pathlib import Path
-from typing import Any
-from unittest import mock
 
 import httpx
 import pytest
 
 from tests.integration.docker_log_helper import (
-    assert_log_contains_extra_fields,
     container_is_running,
     filter_logs_by_level,
     filter_logs_by_message,
-    get_container_exit_code,
     get_docker_logs,
     parse_json_logs,
     verify_log_structure,
-    wait_for_container_exit,
 )
 
 
@@ -228,9 +221,7 @@ class TestLoggingEnhancements:
 
         # Verify logs show configuration was loaded successfully
         config_logs = filter_logs_by_message(logs, "application created successfully")
-        assert (
-            len(config_logs) > 0
-        ), "Should show successful app creation in current working state"
+        assert len(config_logs) > 0, "Should show successful app creation in current working state"
 
         # Verify we have INFO level logs at startup
         info_logs = filter_logs_by_level(logs, "INFO")
@@ -334,9 +325,7 @@ class TestLoggingEnhancements:
         for log in critical_logs:
             verify_log_structure(log)
 
-        print(
-            f"System health verified: {len(logs)} total logs, {len(critical_logs)} CRITICAL"
-        )
+        print(f"System health verified: {len(logs)} total logs, {len(critical_logs)} CRITICAL")
 
     def test_logs_include_request_context(self, docker_container, http_client):
         """
@@ -363,9 +352,7 @@ class TestLoggingEnhancements:
         logs = parse_json_logs(log_output)
 
         # Filter for logs with our request ID
-        request_logs = [
-            log for log in logs if log.get("request_id") == request_id
-        ]
+        request_logs = [log for log in logs if log.get("request_id") == request_id]
 
         # Should have at least one log with request context
         # (Response completed or similar)
@@ -416,9 +403,7 @@ class TestLoggingEnhancements:
         - Container has healthy uptime
         """
         # Verify container is still running
-        assert container_is_running(
-            "prompt-chaining-api"
-        ), "Container crashed or stopped"
+        assert container_is_running("prompt-chaining-api"), "Container crashed or stopped"
 
         # Get logs
         log_output = get_docker_logs("prompt-chaining-api")
@@ -599,9 +584,7 @@ class TestDockerContainerHealth:
 
     def test_container_is_running(self, docker_container):
         """Verify that the Docker container is running."""
-        assert container_is_running(
-            "prompt-chaining-api"
-        ), "Container is not running"
+        assert container_is_running("prompt-chaining-api"), "Container is not running"
         print("Container is running")
 
     def test_health_endpoint_accessible(self, docker_container):

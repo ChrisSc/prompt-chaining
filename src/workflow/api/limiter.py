@@ -108,3 +108,31 @@ limiter = Limiter(
     headers_enabled=True,  # Include X-RateLimit-* headers in responses
     enabled=os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true",  # Disable in tests
 )
+
+
+def get_limiter_status() -> dict[str, str | bool]:
+    """
+    Get a structured dump of the rate limiter's current configuration and status.
+
+    Returns a dictionary with all relevant rate limiter configuration suitable for logging
+    as structured extra fields. Useful for monitoring and debugging rate limiting behavior.
+
+    Returns:
+        Dictionary containing:
+        - enabled: Whether rate limiting is active (bool)
+        - default_limit: Default rate limit string (e.g., "100/hour")
+        - chat_completions_limit: Rate limit for chat completions endpoint
+        - models_limit: Rate limit for models endpoint
+        - key_function_type: Type of key function used (jwt-based)
+    """
+    from workflow.config import Settings
+
+    settings = Settings()
+
+    return {
+        "enabled": limiter.enabled,
+        "default_limit": settings.rate_limit_default,
+        "chat_completions_limit": settings.rate_limit_chat_completions,
+        "models_limit": settings.rate_limit_models,
+        "key_function_type": "jwt-based",
+    }

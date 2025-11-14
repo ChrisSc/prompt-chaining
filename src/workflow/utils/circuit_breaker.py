@@ -202,6 +202,37 @@ class CircuitBreaker:
                     },
                 )
 
+    def get_state_dump(self) -> dict[str, Any]:
+        """
+        Get a structured dump of the circuit breaker's current state.
+
+        Returns a dictionary with all relevant state information suitable for logging
+        as structured extra fields. Useful for monitoring and debugging.
+
+        Returns:
+            Dictionary containing:
+            - state: Current state (closed/open/half_open)
+            - failure_count: Current consecutive failures
+            - success_count: Successful tests in half-open state
+            - failure_threshold: Failures needed to open circuit
+            - timeout: Seconds to wait before attempting recovery
+            - half_open_attempts: Tests needed to close circuit from half-open
+            - recovery_attempt_count: Total recovery attempts made
+            - consecutive_recovery_failures: Recent recovery failures
+            - max_recovery_attempts: Threshold for deeming service unrecoverable
+        """
+        return {
+            "state": self.state.value,
+            "failure_count": self.failure_count,
+            "success_count": self.success_count,
+            "failure_threshold": self.failure_threshold,
+            "timeout": self.timeout,
+            "half_open_attempts": self.half_open_attempts,
+            "recovery_attempt_count": self.recovery_attempt_count,
+            "consecutive_recovery_failures": self.consecutive_recovery_failures,
+            "max_recovery_attempts": self.max_recovery_attempts,
+        }
+
     def allow_request(self) -> bool:
         """
         Check if request should be allowed.

@@ -293,7 +293,9 @@ async def stream_chain(
                     "Received custom stream event",
                     extra={
                         "mode": mode,
-                        "chunk_keys": list(chunk.keys()) if isinstance(chunk, dict) else type(chunk).__name__,
+                        "chunk_keys": (
+                            list(chunk.keys()) if isinstance(chunk, dict) else type(chunk).__name__
+                        ),
                     },
                 )
 

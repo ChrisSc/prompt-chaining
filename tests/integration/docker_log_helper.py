@@ -10,7 +10,7 @@ Provides helpers to:
 
 import json
 import subprocess
-from typing import Any, Optional
+from typing import Any
 
 
 def get_docker_logs(container_name: str = "prompt-chaining-api") -> str:
@@ -46,9 +46,7 @@ def get_docker_logs(container_name: str = "prompt-chaining-api") -> str:
             timeout=10,
         )
         if result.returncode != 0:
-            raise RuntimeError(
-                f"Failed to get logs from {container_name}: {result.stderr}"
-            )
+            raise RuntimeError(f"Failed to get logs from {container_name}: {result.stderr}")
         return result.stdout
 
     except subprocess.TimeoutExpired as e:
@@ -82,9 +80,7 @@ def parse_json_logs(log_output: str) -> list[dict[str, Any]]:
     return logs
 
 
-def filter_logs_by_level(
-    logs: list[dict[str, Any]], level: str
-) -> list[dict[str, Any]]:
+def filter_logs_by_level(logs: list[dict[str, Any]], level: str) -> list[dict[str, Any]]:
     """
     Filter logs by level.
 
@@ -116,8 +112,8 @@ def filter_logs_by_message(
 
 def verify_log_structure(
     log: dict[str, Any],
-    required_fields: Optional[list[str]] = None,
-    optional_fields: Optional[list[str]] = None,
+    required_fields: list[str] | None = None,
+    optional_fields: list[str] | None = None,
 ) -> bool:
     """
     Verify that a log entry has required structure.
@@ -163,8 +159,7 @@ def assert_log_contains_extra_fields(
     """
     for field, expected_value in expected_fields.items():
         assert field in log, (
-            f"Missing extra field '{field}' in log. "
-            f"Log keys: {list(log.keys())}"
+            f"Missing extra field '{field}' in log. " f"Log keys: {list(log.keys())}"
         )
         actual_value = log.get(field)
         assert (
@@ -228,9 +223,7 @@ def container_is_running(container_name: str = "prompt-chaining-api") -> bool:
         return False
 
 
-def wait_for_container_exit(
-    container_name: str = "prompt-chaining-api", timeout: int = 30
-) -> int:
+def wait_for_container_exit(container_name: str = "prompt-chaining-api", timeout: int = 30) -> int:
     """
     Wait for a container to stop and return its exit code.
 
@@ -253,6 +246,4 @@ def wait_for_container_exit(
             return get_container_exit_code(container_name)
         time.sleep(0.5)
 
-    raise TimeoutError(
-        f"Container {container_name} did not exit within {timeout} seconds"
-    )
+    raise TimeoutError(f"Container {container_name} did not exit within {timeout} seconds")

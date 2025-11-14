@@ -137,6 +137,101 @@ Configure via `LOG_LEVEL` (default: INFO) and `LOG_FORMAT` (default: json). Stru
 
 For logging architecture and monitoring queries, see **ARCHITECTURE.md**.
 
+### Startup Component Logging
+
+The application logs detailed state dumps for critical components on startup, enabling visibility into initial configuration and readiness.
+
+**Circuit Breaker State Dump**
+
+When the application starts, the circuit breaker logs its full state configuration. This helps verify circuit breaker is initialized correctly and shows its failure thresholds and recovery parameters.
+
+Logged fields (from `src/workflow/main.py:65-73`):
+- `state`: Current state (closed/open/half_open)
+- `failure_count`: Current consecutive failures
+- `success_count`: Successful tests in half-open state
+- `failure_threshold`: Failures needed to open circuit
+- `timeout`: Seconds to wait before attempting recovery
+- `half_open_attempts`: Tests needed to close circuit from half-open
+- `recovery_attempt_count`: Total recovery attempts made
+- `consecutive_recovery_failures`: Recent recovery failures
+- `max_recovery_attempts`: Threshold for deeming service unrecoverable
+
+Example startup log:
+
+```json
+{
+  "timestamp": "2024-11-13T10:30:42.123Z",
+  "level": "INFO",
+  "logger": "workflow.main",
+  "message": "Circuit breaker initialized with state dump",
+  "step": "initialization",
+  "service": "anthropic",
+  "state": "closed",
+  "failure_count": 0,
+  "success_count": 0,
+  "failure_threshold": 3,
+  "timeout": 30,
+  "half_open_attempts": 1,
+  "recovery_attempt_count": 0,
+  "consecutive_recovery_failures": 0,
+  "max_recovery_attempts": 3
+}
+```
+
+**Rate Limiter Health Status**
+
+The rate limiter logs its configuration and enabled status at startup. This verifies rate limiting is properly initialized and shows the active rate limit rules for each endpoint.
+
+Logged fields (from `src/workflow/api/limiter.py:113-138`):
+- `enabled`: Whether rate limiting is active (bool)
+- `default_limit`: Default rate limit string (e.g., "100/hour")
+- `chat_completions_limit`: Rate limit for chat completions endpoint
+- `models_limit`: Rate limit for models endpoint
+- `key_function_type`: Type of key function used (jwt-based)
+
+Example startup log:
+
+```json
+{
+  "timestamp": "2024-11-13T10:30:42.456Z",
+  "level": "INFO",
+  "logger": "workflow.main",
+  "message": "Rate limiter initialized with status",
+  "step": "initialization",
+  "component": "rate_limiter",
+  "enabled": true,
+  "default_limit": "100/hour",
+  "chat_completions_limit": "50/hour",
+  "models_limit": "100/hour",
+  "key_function_type": "jwt-based"
+}
+```
+
+### Token Streaming Logging
+
+The synthesize step uses sample-based logging instead of per-token logging to avoid excessive log volume. Tokens are logged at DEBUG level every 100 tokens, capturing periodic checkpoints of streaming progress.
+
+**Why Sample-Based Logging**
+
+- **Volume Control**: Per-token logging at 4,000 tokens would generate 4,000 individual logs per request (overwhelming)
+- **Debug-Level**: Sample logs only appear when LOG_LEVEL=DEBUG, suitable for development/troubleshooting
+- **Frequency**: Approximately 1 log per 100 tokens keeps noise minimal while providing progress visibility
+
+Example sample log (from `src/workflow/chains/steps.py:442-449`):
+
+```json
+{
+  "timestamp": "2024-11-13T10:30:50.789Z",
+  "level": "DEBUG",
+  "logger": "workflow.chains.steps",
+  "message": "Tokens streaming to client",
+  "step": "synthesize",
+  "token_count": 100
+}
+```
+
+After 4,000 tokens, you'd see approximately 40 such sample logs (one every 100 tokens) instead of 4,000 per-token logs.
+
 ### Cost Tracking
 ```bash
 grep "total_cost_usd" logs.json | jq '.total_cost_usd' | sort -n
@@ -213,6 +308,29 @@ except (json.JSONDecodeError, ValidationError) as e:
     )
     raise
 ```
+
+**Authentication Failures**
+
+Authentication failures are logged at WARNING level (not ERROR) because they don't indicate service malfunction—they are expected when clients provide invalid or expired credentials. The log level allows monitoring of auth issues without triggering alert thresholds designed for service errors.
+
+Auth failures occur in `src/workflow/api/dependencies.py:84-109`:
+
+- **ExpiredSignatureError (401 response)**: Token has passed its expiration time
+  ```python
+  logger.warning("JWT token verification failed: token expired")
+  raise HTTPException(status_code=401, detail="Token has expired")
+  ```
+
+- **InvalidTokenError (403 response)**: Token signature is invalid or malformed
+  ```python
+  logger.warning(
+      "JWT token verification failed: invalid token",
+      extra={"error": str(exc)},
+  )
+  raise HTTPException(status_code=403, detail="Invalid authentication credentials")
+  ```
+
+These distinguish between two common failure modes: expired tokens (client should refresh) versus tampered/invalid tokens (security concern).
 
 **WARNING (30): Degraded State or Potential Issues**
 
@@ -358,6 +476,46 @@ Error log example with exception information:
 }
 ```
 
+Startup component dump example - Circuit breaker state:
+
+```json
+{
+  "timestamp": "2024-11-13T10:30:42.123Z",
+  "level": "INFO",
+  "logger": "workflow.main",
+  "message": "Circuit breaker initialized with state dump",
+  "step": "initialization",
+  "service": "anthropic",
+  "state": "closed",
+  "failure_count": 0,
+  "success_count": 0,
+  "failure_threshold": 3,
+  "timeout": 30,
+  "half_open_attempts": 1,
+  "recovery_attempt_count": 0,
+  "consecutive_recovery_failures": 0,
+  "max_recovery_attempts": 3
+}
+```
+
+Startup component dump example - Rate limiter health:
+
+```json
+{
+  "timestamp": "2024-11-13T10:30:42.456Z",
+  "level": "INFO",
+  "logger": "workflow.main",
+  "message": "Rate limiter initialized with status",
+  "step": "initialization",
+  "component": "rate_limiter",
+  "enabled": true,
+  "default_limit": "100/hour",
+  "chat_completions_limit": "50/hour",
+  "models_limit": "100/hour",
+  "key_function_type": "jwt-based"
+}
+```
+
 ### Configuration
 
 Log level and format are controlled via environment variables in `.env`:
@@ -477,7 +635,9 @@ logger.error(
 ### References
 
 - See "Configuration Quick Reference" (line 30) for LOG_LEVEL and LOG_FORMAT environment variable defaults
-- See "Observability" section (line 133) for monitoring, cost tracking, and performance analysis patterns
+- See "Observability" section (line 133) for monitoring, cost tracking, and performance analysis patterns:
+  - "Startup Component Logging" (line 140): Circuit breaker state dump and rate limiter health status logged on startup
+  - "Token Streaming Logging" (line 210): Sample-based token logging at DEBUG level (every 100 tokens)
 - See "Common Issues" section (line 485) for debugging tips using log output
 - For logging architecture details, circuit breaker behavior, and request ID propagation, see **ARCHITECTURE.md**
 - For detailed performance monitoring and token tracking, see **BENCHMARKS.md**

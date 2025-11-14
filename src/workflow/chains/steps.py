@@ -422,6 +422,7 @@ async def synthesize_step(
         final_response = ""
         total_input_tokens = 0
         total_output_tokens = 0
+        token_count = 0
 
         # Use Claude's stream API to get tokens progressively
         # Pattern from documentation: ./documentation/langchain/oss/python/langgraph/streaming.md lines 559-676
@@ -431,18 +432,21 @@ async def synthesize_step(
             # Extract token from chunk
             token = chunk.content if chunk.content else ""
             if token:
+                token_count += 1
                 final_response += token
                 # Emit token via stream writer for "custom" mode streaming
                 if writer is not None:
                     try:
                         writer({"type": "token", "content": token})
-                        logger.info(
-                            "Wrote token to stream",
-                            extra={
-                                "step": "synthesize",
-                                "token_length": len(token),
-                            },
-                        )
+                        # Sample-based logging: log every 100 tokens at DEBUG level
+                        if token_count % 100 == 0:
+                            logger.debug(
+                                "Tokens streaming to client",
+                                extra={
+                                    "step": "synthesize",
+                                    "token_count": token_count,
+                                },
+                            )
                     except Exception as write_error:
                         logger.warning(
                             "Failed to write token via stream writer",
@@ -452,9 +456,6 @@ async def synthesize_step(
                             },
                         )
                         # Continue processing despite write error
-                        pass
-                else:
-                    logger.info("Writer is None, skipping token emission")
 
             # Capture token usage from response metadata
             # Usage is typically only populated on the final chunk
