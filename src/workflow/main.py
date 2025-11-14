@@ -107,7 +107,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.api_title,
         version=settings.api_version,
-        description="Prompt Chaining orchestration platform with OpenAI-compatible API",
+        description="Prompt Chaining workflow platform with OpenAI-compatible API",
         lifespan=lifespan,
     )
 
