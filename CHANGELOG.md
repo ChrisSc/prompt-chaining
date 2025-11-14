@@ -473,8 +473,73 @@ curl -H "X-Request-ID: my-trace-123" http://localhost:8000/v1/chat/completions \
 
 ---
 
+## [0.4.3] - 2025-11-14
+
+### Added
+- **Trace Correlation and User Metadata in Logging** - End-to-end observability with automatic context injection
+  - Automatic `request_id` injection from contextvars into all logs (no manual `extra=` needed)
+  - Automatic `user_id` extraction from JWT `sub` claim and injection into logs after authentication
+  - `request_id` and `user_id` fields added to LangGraph ChainState for cross-step propagation
+  - `request_id` propagation to Anthropic API calls via `extra_headers` parameter for distributed tracing
+  - New `user_context` module (`src/workflow/utils/user_context.py`) for user metadata management
+  - Async-safe context variable isolation prevents request interference and enables concurrent request handling
+- **Comprehensive Integration Testing** - 13 new tests validating trace correlation against live Docker container
+  - Request ID auto-injection (custom and auto-generated IDs)
+  - User ID extraction from JWT `sub` claim
+  - Cross-step trace propagation through analyze → process → synthesize workflow
+  - Edge case handling (missing headers, invalid JWT, expired tokens)
+  - Concurrent request isolation verification
+  - Full end-to-end trace validation
+- **Enhanced Documentation**
+  - CLAUDE.md: New "Trace Correlation (Request and User ID)" section (lines 443-542) with detailed examples
+  - CLAUDE.md: Updated "Structured Logging Fields" table with `request_id` and `user_id` fields
+  - CLAUDE.md: Added troubleshooting entry for missing trace fields in logs
+  - Code docstrings: Enhanced 5 files with detailed explanations of auto-injection mechanism
+  - Inline comments: Added context-aware comments in all modified modules
+
+### Key Features
+- **Zero Manual Effort**: Developers no longer need to add `request_id` or `user_id` to log statements
+- **Complete Visibility**: Single request ID flows through entire system for comprehensive tracing
+- **User-Centric Debugging**: Filter logs by user_id for customer support and multi-tenant analysis
+- **External Correlation**: Anthropic API calls include X-Request-ID header for distributed tracing
+- **Production-Ready**: All 45 tests passing (13 new), 100% coverage of trace correlation features
+
+### Implementation
+- `src/workflow/utils/logging.py`: Enhanced JSONFormatter with auto-injection of `request_id` and `user_id` from contextvars
+- `src/workflow/utils/user_context.py`: NEW module with `set_user_context()` and `get_user_context()` functions
+- `src/workflow/api/dependencies.py`: Extract and store `user_id` from JWT `sub` claim at auth boundary
+- `src/workflow/chains/steps.py`: Propagate `request_id` to Anthropic API via `extra_headers` in all three steps
+- `src/workflow/models/chains.py`: Added `request_id` and `user_id` fields to ChainState
+- `src/workflow/api/v1/chat.py`: Initialize state with context variables from contextvars
+- `tests/integration/test_trace_correlation.py`: NEW 13-test suite validating trace correlation
+
+### Testing
+- ✅ 45 total tests passing (13 new trace correlation tests)
+- ✅ Request ID auto-injection validated
+- ✅ User ID extraction and propagation validated
+- ✅ Cross-step trace correlation verified
+- ✅ Concurrent request isolation confirmed
+- ✅ Edge cases tested (missing headers, invalid JWT, expired tokens)
+- ✅ Full end-to-end trace validated
+
+### Benefits
+- **Debugging**: Trace single request through entire workflow with `jq 'select(.request_id=="req_123")' logs.json`
+- **User Support**: Filter activity by user with `jq 'select(.user_id=="alice@example.com")' logs.json`
+- **External Correlation**: Match app logs with Anthropic API logs via request_id
+- **Operator Visibility**: Both IDs present in every log for production observability
+- **Developer Experience**: Auto-injection eliminates manual logging effort and reduces errors
+
+### Backward Compatibility
+- ✅ Fully backward compatible
+- ✅ All existing functionality preserved
+- ✅ No breaking changes to API or configuration
+- ✅ Auto-injection is transparent to developers
+
 ## Version History
 
+- **v0.4.3** - Trace correlation and user metadata auto-injection into all logs
+- **v0.4.1** - Performance monitoring & metrics collection with comprehensive benchmarking
+- **v0.4.0** - Prompt-chaining configuration documentation and tuning guide
 - **v0.3.4** - Request ID propagation for distributed tracing across all agents
 - **v0.3.3** - Circuit breaker pattern & resilient retry logic with exponential backoff
 - **v0.3.2** - Comprehensive logging facility with all 5 log levels (FATAL, ERROR, WARNING, INFO, DEBUG)
