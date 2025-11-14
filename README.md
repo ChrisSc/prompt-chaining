@@ -7,7 +7,9 @@
 ![OpenAI API](https://img.shields.io/badge/OpenAI-API-412991?logo=openai)
 ![GitHub Template](https://img.shields.io/badge/GitHub-Template-blue?logo=github)
 
-A *github repository template* for scaffolding **prompt-chaining workflows** with Anthropic's Claude and OpenAI-compatible APIs. Built on the proven prompt-chaining pattern: sequential steps (Analysis, Processing, Synthesis) orchestrated by LangGraph StateGraph with validation gates between steps.
+A *github repository template* for scaffolding **production-ready prompt-chaining workflows** with Anthropic's Claude and OpenAI-compatible APIs. Built on the proven prompt-chaining pattern: sequential steps (Analysis, Processing, Synthesis) orchestrated by LangGraph StateGraph with validation gates between steps.
+
+**Observability-first architecture**: Unlike traditional agentic frameworks where observability is retrofitted, this template treats observability as a foundational design principle. Every request gets automatic distributed tracing via context propagation, every LLM call logs token usage and cost attribution, and every agent step tracks quality metrics—with zero manual instrumentation. Context variables (`request_id`, `user_id`) flow automatically from middleware → workflow state → external API calls → structured logs, enabling complete request reconstruction and multi-tenant debugging without boilerplate. Validation gates enforce quality boundaries between agents with full visibility into why workflows succeed or fail. **Ship to production with confidence**: comprehensive observability isn't added later—it's already there.
 
 ![Prompt Chaining Pattern](prompt-chaining.png "Prompt Chaining Pattern")
 
@@ -34,15 +36,17 @@ This template provides a complete foundation for prompt-chaining workflows:
 - Validation gates for data quality enforcement
 - Flexible configuration via environment variables
 
-**Production Features**:
-- Token usage tracking with USD cost logging
-- Request ID propagation for distributed tracing
-- Circuit breaker with automatic retry logic
-- Security headers and request size validation
-- Request timeout enforcement (per-phase)
-- Rate limiting with JWT + IP-based keys
-- Comprehensive structured JSON logging
-- FastAPI with automatic /docs endpoint
+**Observability & Production Features**:
+- **Zero-boilerplate distributed tracing**: Auto-propagating `request_id` and `user_id` via context variables
+- **Automatic cost attribution**: Every LLM call logs tokens and USD cost per user/request
+- **State evolution visibility**: Each workflow step logs metrics (elapsed time, confidence, token usage)
+- **Startup component dumps**: Circuit breaker and rate limiter state logged on initialization
+- **Quality enforcement**: Validation gates with full logging of why workflows pass/fail
+- **Multi-tenant debugging**: Filter all logs by user_id without manual instrumentation
+- **Circuit breaker with retry logic**: Automatic resilience with observable state transitions
+- **Structured JSON logging**: Production-ready logs compatible with Loki, Elasticsearch, CloudWatch
+- **Security**: JWT auth, security headers, request size validation, timeout enforcement
+- **Rate limiting**: JWT + IP-based keys with observable limits via response headers
 
 **Development**:
 - Full type hints and Pydantic v2 validation
