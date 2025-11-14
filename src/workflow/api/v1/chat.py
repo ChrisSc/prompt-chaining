@@ -50,7 +50,14 @@ async def get_chain_graph(request: Request) -> Any:
     chain_graph = getattr(request.app.state, "chain_graph", None)
 
     if chain_graph is None:
-        logger.debug("Chain graph not available")
+        logger.error(
+            "Chain graph not available - service initialization may have failed",
+            extra={
+                "endpoint": "chat.completions",
+                "status_code": 503,
+                "service_status": "initialization_failed",
+            },
+        )
 
     return chain_graph
 

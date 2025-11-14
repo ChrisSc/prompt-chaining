@@ -88,12 +88,32 @@ def create_app() -> FastAPI:
     except Exception as exc:
         # Cannot use logger yet - settings failed to load
         import sys
+        import traceback
 
         print(f"CRITICAL: Failed to load settings: {exc}", file=sys.stderr)
         raise
 
     # Setup logging
     setup_logging(settings)
+
+    # Log critical error if validation failed during settings load
+    try:
+        # Settings loaded successfully - validate critical fields
+        if not settings.anthropic_api_key:
+            raise ValueError("ANTHROPIC_API_KEY is required")
+        if not settings.jwt_secret_key:
+            raise ValueError("JWT_SECRET_KEY is required")
+    except ValueError as exc:
+        logger.critical(
+            f"Configuration validation failed: {exc}",
+            extra={
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+                "validation_field": str(exc),
+            },
+            exc_info=True,
+        )
+        raise
 
     logger.info(
         "Creating FastAPI application",
