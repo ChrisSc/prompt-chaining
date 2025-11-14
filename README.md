@@ -7,7 +7,7 @@
 ![OpenAI API](https://img.shields.io/badge/OpenAI-API-412991?logo=openai)
 ![GitHub Template](https://img.shields.io/badge/GitHub-Template-blue?logo=github)
 
-A *github repository template* for scaffolding **production-ready prompt-chaining workflows** with Anthropic's Claude and OpenAI-compatible APIs. Built on the proven prompt-chaining pattern: sequential steps (Analysis, Processing, Synthesis) orchestrated by LangGraph StateGraph with validation gates between steps.
+A *github repository template* for scaffolding **turn-key prompt-chaining workflows** with Anthropic's Claude and OpenAI-compatible APIs. Built on the proven prompt-chaining pattern: sequential steps (Analysis, Processing, Synthesis) orchestrated by LangGraph StateGraph with validation gates between steps.
 
 **Observability-first architecture**: Unlike traditional agentic frameworks where observability is retrofitted, this template treats observability as a foundational design principle. Every request gets automatic distributed tracing via context propagation, every LLM call logs token usage and cost attribution, and every agent step tracks quality metrics—with zero manual instrumentation. Context variables (`request_id`, `user_id`) flow automatically from middleware → workflow state → external API calls → structured logs, enabling complete request reconstruction and multi-tenant debugging without boilerplate. Validation gates enforce quality boundaries between agents with full visibility into why workflows succeed or fail.
 
@@ -44,7 +44,7 @@ This template provides a complete foundation for prompt-chaining workflows:
 - **Quality enforcement**: Validation gates with full logging of why workflows pass/fail
 - **Multi-tenant debugging**: Filter all logs by user_id without manual instrumentation
 - **Circuit breaker with retry logic**: Automatic resilience with observable state transitions
-- **Structured JSON logging**: Production-ready logs compatible with Loki, Elasticsearch, CloudWatch
+- **Structured JSON logging**: turn-key logs compatible with Loki, Elasticsearch, CloudWatch
 - **Security**: JWT auth, security headers, request size validation, timeout enforcement
 - **Rate limiting**: JWT + IP-based keys with observable limits via response headers
 
@@ -68,6 +68,7 @@ cp .env.example .env
 
 # 2. Choose your path:
 # DOCKER (recommended):
+docker build --no-cache -t prompt-chaining:latest .
 docker-compose up -d
 curl http://localhost:8000/health/
 
@@ -82,7 +83,7 @@ export API_BEARER_TOKEN=$(python scripts/generate_jwt.py)
 python console_client.py "Hello, world!"
 ```
 
-**Docker**: Isolated environment, reproducible builds, production-ready
+**Docker**: Isolated environment, reproducible builds, turn-key
 **Manual**: Development-focused, hot reload, interactive /docs
 
 See [CLAUDE.md](./CLAUDE.md#quick-setup) for detailed setup and Docker guidance.
