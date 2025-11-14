@@ -1,6 +1,7 @@
 # Prompt-Chaining Workflow Template
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+![Built with Haiku 4.5](https://img.shields.io/badge/Built%20with-Claude%20Haiku%204.5-ED8002)
 ![Anthropic](https://img.shields.io/badge/Anthropic-Claude-ED8002?logo=anthropic)
 ![LangChain](https://img.shields.io/badge/LangChain-1.0.0+-blue)
 ![LangGraph](https://img.shields.io/badge/LangGraph-1.0.0+-blue)
