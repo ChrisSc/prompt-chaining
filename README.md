@@ -45,7 +45,7 @@ This template provides a complete foundation for prompt-chaining workflows:
 - **Quality enforcement**: Validation gates with full logging of why workflows pass/fail
 - **Multi-tenant debugging**: Filter all logs by user_id without manual instrumentation
 - **Circuit breaker with retry logic**: Automatic resilience with observable state transitions
-- **Structured JSON logging**: turn-key logs compatible with Loki, Elasticsearch, CloudWatch
+- **Structured JSON logging**: turnkey logs compatible with Loki, Elasticsearch, CloudWatch
 - **Security**: JWT auth, security headers, request size validation, timeout enforcement
 - **Rate limiting**: JWT + IP-based keys with observable limits via response headers
 
@@ -84,7 +84,7 @@ export API_BEARER_TOKEN=$(python scripts/generate_jwt.py)
 python console_client.py "Hello, world!"
 ```
 
-**Docker**: Isolated environment, reproducible builds, turn-key
+**Docker**: Isolated environment, reproducible builds, turnkey
 **Manual**: Development-focused, hot reload, interactive /docs
 
 See [CLAUDE.md](./CLAUDE.md#quick-setup) for detailed setup and Docker guidance.
