@@ -100,7 +100,7 @@ class Settings(BaseSettings):
     # Streaming Configuration
     streaming_timeout: int = Field(
         default=60,
-        description="Maximum streaming duration in seconds (deprecated, use worker_coordination_timeout and synthesis_timeout)",
+        description="Deprecated: use analyze_timeout, process_timeout, and synthesize_timeout",
         ge=1,
         le=300,
     )
@@ -112,13 +112,13 @@ class Settings(BaseSettings):
     )
     worker_coordination_timeout: int = Field(
         default=45,
-        description="Maximum time for worker coordination phase in seconds",
+        description="Maximum time for all non-synthesis steps in seconds (deprecated)",
         ge=1,
         le=270,
     )
     synthesis_timeout: int = Field(
         default=30,
-        description="Maximum time for synthesis phase in seconds",
+        description="Maximum time for synthesize step in seconds (deprecated, use chain_synthesize_timeout)",
         ge=1,
         le=270,
     )

@@ -73,33 +73,20 @@ def load_system_prompt(filename: str) -> str:
 
 async def analyze_step(state: ChainState, config: ChainConfig) -> dict[str, Any]:
     """
-    Analysis step: Parse user intent and extract key information.
+    Analyze step: Extract intent and key information from user request.
 
-    This is the first step in the prompt-chaining workflow. It analyzes the user's
-    request to extract:
-    - The primary intent or goal
-    - Key entities, topics, or concepts
-    - Assessment of task complexity (simple, moderate, complex)
-    - Additional contextual information
-
-    The step reads the latest user message from the state, sends it to the LLM
-    with the analysis system prompt, and parses the JSON response into an
-    AnalysisOutput model.
+    First step in prompt-chaining: parses user intent, entities, and complexity level.
 
     Args:
-        state: Current ChainState containing messages and prior step outputs
-        config: ChainConfig with model selection, token limits, and timeouts
+        state: ChainState with messages
+        config: ChainConfig with model and timeout settings
 
     Returns:
-        Dictionary with state updates:
-        - analysis: AnalysisOutput as dict (intent, key_entities, complexity, context)
-        - messages: Appended response from the LLM
-        - step_metadata: Tracking info (tokens, cost, duration)
+        Dict with analysis, messages, and step_metadata
 
     Raises:
-        ValidationError: If the LLM response doesn't conform to AnalysisOutput schema
-        FileNotFoundError: If the system prompt file is not found
-        ValueError: If unable to extract user message from state
+        ValidationError: If LLM response doesn't conform to AnalysisOutput schema
+        ValueError: If user message cannot be extracted
     """
     start_time = time.time()
 
@@ -220,30 +207,20 @@ async def analyze_step(state: ChainState, config: ChainConfig) -> dict[str, Any]
 
 async def process_step(state: ChainState, config: ChainConfig) -> dict[str, Any]:
     """
-    Processing step: Generate content based on analysis results.
+    Process step: Generate content based on analysis results.
 
-    This is the second step in the prompt-chaining workflow. It takes the analysis
-    output from the previous step and uses it to generate substantive content that
-    addresses the user's intent.
-
-    The step builds a processing prompt that incorporates the analysis context,
-    sends it to the LLM with the processing system prompt, and parses the JSON
-    response into a ProcessOutput model.
+    Second step in prompt-chaining: creates substantive content addressing user intent.
 
     Args:
-        state: Current ChainState containing analysis results and messages
-        config: ChainConfig with model selection, token limits, and timeouts
+        state: ChainState with analysis results
+        config: ChainConfig with model and timeout settings
 
     Returns:
-        Dictionary with state updates:
-        - processed_content: ProcessOutput as dict (content, confidence, metadata)
-        - messages: Appended response from the LLM
-        - step_metadata: Tracking info (tokens, cost, duration)
+        Dict with processed_content, messages, and step_metadata
 
     Raises:
-        ValidationError: If the LLM response doesn't conform to ProcessOutput schema
-        FileNotFoundError: If the system prompt file is not found
-        ValueError: If analysis is not available in state
+        ValidationError: If LLM response doesn't conform to ProcessOutput schema
+        ValueError: If analysis not available in state
     """
     start_time = time.time()
 
@@ -366,37 +343,21 @@ async def synthesize_step(
     chain_config: ChainConfig,
 ) -> dict[str, Any]:
     """
-    Synthesis step: Polish and format the final response with token streaming.
+    Synthesize step: Polish and format final response with token streaming.
 
-    This is the final step in the prompt-chaining workflow. It takes the processed
-    content from the previous step and transforms it into a polished, professionally
-    formatted response optimized for readability and delivery.
-
-    This step uses Claude's streaming API to emit tokens progressively via LangGraph's
-    get_stream_writer() function. The stream writer enables "custom" mode streaming to
-    the HTTP endpoint for real-time token delivery. Still returns a complete dict to
-    LangGraph for state management compatibility.
-
-    References:
-    - ./documentation/langchain/oss/python/langgraph/streaming.md "Stream custom data" section
-    - ./documentation/langchain/oss/python/langgraph/streaming.md "Use with any LLM" section
-    - Extended example at lines 559-676 for streaming arbitrary chat models pattern
+    Final step in prompt-chaining: streams tokens via get_stream_writer() for real-time
+    delivery while maintaining state compatibility. Streaming enabled via custom mode.
 
     Args:
-        state: Current ChainState containing processed content and messages
-        runnable_config: RunnableConfig from LangGraph for proper streaming context propagation
-        chain_config: ChainConfig with model selection, token limits, and timeouts
+        state: ChainState with processed content
+        runnable_config: RunnableConfig for streaming context propagation
+        chain_config: ChainConfig with model and timeout settings
 
     Returns:
-        Dictionary with state updates:
-        - final_response: Complete synthesized text
-        - synthesis_output: SynthesisOutput with formatting details
-        - step_metadata: Complete tracking info (tokens, cost, duration)
+        Dict with final_response and step_metadata
 
     Raises:
-        ValueError: If processed_content is not available in state
-        FileNotFoundError: If the system prompt file is not found
-        Exception: On API or processing errors
+        ValueError: If processed_content unavailable in state
     """
     start_time = time.time()
 

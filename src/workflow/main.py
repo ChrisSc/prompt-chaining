@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI):  # type: ignore
     """
     Manage application lifecycle.
 
-    Handles startup and shutdown events for both orchestrator and chain graph.
+    Handles startup and shutdown events for chain graph initialization.
 
     Args:
         app: FastAPI application instance
@@ -185,9 +185,9 @@ def create_app() -> FastAPI:
     # Add error handling
     @app.exception_handler(TemplateServiceError)
     async def workflow_error_handler(request: Request, exc: TemplateServiceError):  # type: ignore
-        """Handle Orchestrator Worker-specific exceptions."""
+        """Handle template service-specific exceptions."""
         logger.error(
-            f"Orchestrator Worker error: {exc.message}",
+            f"Template service error: {exc.message}",
             extra={
                 "error_code": exc.error_code,
                 "path": request.url.path,
