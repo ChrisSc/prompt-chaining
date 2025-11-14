@@ -70,6 +70,7 @@ curl http://localhost:8000/health/
 # OR MANUAL:
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
+pip install "fastapi[standard]" # Installs FastAPI cli
 ./scripts/dev.sh
 
 # 3. Test the API
