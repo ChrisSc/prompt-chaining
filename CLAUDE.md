@@ -1,6 +1,6 @@
-# CLAUDE.md
+# CLAUDE.md: Guidance for Claude Code
 
-Guidance for Claude Code when working with the prompt-chaining orchestration template.
+Guidance for Claude Code when working with the prompt-chaining orchestration template. This is the project navigation hub. For detailed guidance on specific subsystems, see the nested CLAUDE.md files below.
 
 ## Project Overview
 
@@ -61,6 +61,43 @@ Use relative imports only (required for FastAPI CLI discovery):
 - Correct: `from workflow.config import Settings`
 - Wrong: `from src.workflow.config import Settings`
 
+## Where to Find Guidance
+
+This project uses nested CLAUDE.md files for context-aware, token-efficient guidance in each subsystem. Choose based on your task:
+
+### Quick Reference by Task
+
+| Task | Start Here |
+|------|------------|
+| **Adding/fixing API endpoints** | `src/workflow/api/CLAUDE.md` |
+| **Customizing prompts or adding steps** | `src/workflow/chains/CLAUDE.md`, then `src/workflow/prompts/CLAUDE.md` |
+| **Extending data models** | `src/workflow/models/CLAUDE.md` |
+| **Debugging logging issues** | `src/workflow/utils/CLAUDE.md` |
+| **Implementing middleware** | `src/workflow/middleware/CLAUDE.md` |
+| **Cost analysis or token tracking** | `src/workflow/utils/CLAUDE.md` |
+| **Authentication issues** | `JWT_AUTHENTICATION.md` |
+| **Performance tuning** | `PROMPT-CHAINING.md` |
+
+### Nested Files Directory
+
+```
+src/workflow/
+├── api/
+│   └── CLAUDE.md          ← API patterns, endpoints, authentication
+├── chains/
+│   └── CLAUDE.md          ← LangGraph, state management, step functions
+├── middleware/
+│   └── CLAUDE.md          ← Request handling, context propagation
+├── models/
+│   └── CLAUDE.md          ← Data models, Pydantic patterns
+├── prompts/
+│   └── CLAUDE.md          ← Prompt engineering, JSON output
+└── utils/
+    └── CLAUDE.md          ← Logging, observability, error handling
+```
+
+Each nested file includes navigation aids to related files.
+
 ## API Quick Reference
 
 | Method | Endpoint | Auth | Purpose |
@@ -70,7 +107,7 @@ Use relative imports only (required for FastAPI CLI discovery):
 | GET | `/health/` | None | Liveness check |
 | GET | `/health/ready` | None | Readiness check |
 
-Streaming responses format: `data: {ChatCompletionChunk}\n\n`, ending with `data: [DONE]\n\n`.
+For detailed patterns and streaming implementation, see `src/workflow/api/CLAUDE.md`.
 
 ## Authentication
 
@@ -84,29 +121,26 @@ For JWT details, error responses, and advanced configuration, see **JWT_AUTHENTI
 
 **Two layers:**
 1. OpenAI-compatible (`models/openai.py`): External API contract
-2. Internal (`models/internal.py`): Domain logic—customize these:
+2. Internal (`models/internal.py`): Domain logic—customize:
    - `AnalysisOutput` - Intent, entities, complexity
    - `ProcessOutput` - Generated content, confidence
    - `SynthesisOutput` - Formatted response
    - `ChainConfig` - Domain-specific parameters
 
-## Customization (Agent Focus)
+For customization patterns and Pydantic usage, see `src/workflow/models/CLAUDE.md`.
 
-### 1. System Prompts
-Edit `src/workflow/prompts/chain_*.md` files. Each must output valid JSON matching its Pydantic model (no markdown wrappers).
+## Customization
 
-### 2. Data Models
-Extend in `src/workflow/models/chains.py`:
-- Add domain-specific fields to AnalysisOutput, ProcessOutput, SynthesisOutput
-- Add domain parameters to ChainConfig
+The template supports domain-specific customization at three levels:
 
-### 3. Configuration
-Update `.env.example` and `src/workflow/config.py`:
-- Per-step models (upgrade to Sonnet for complex reasoning)
-- Token limits, temperature, timeouts
-- Domain-specific settings
+1. **System Prompts** - Edit `src/workflow/prompts/chain_*.md` files
+   - Detailed patterns: see `src/workflow/prompts/CLAUDE.md`
+2. **Data Models** - Extend in `src/workflow/models/chains.py`
+   - Model architecture: see `src/workflow/models/CLAUDE.md`
+3. **Configuration** - Update `.env.example` and `src/workflow/config.py`
+   - Tuning guidance: see **PROMPT-CHAINING.md**
 
-For advanced customization, see **ARCHITECTURE.md "Customization"**.
+For advanced customization, see **ARCHITECTURE.md**.
 
 ## Development Essentials
 
@@ -114,7 +148,6 @@ For advanced customization, see **ARCHITECTURE.md "Customization"**.
 Always use `fastapi dev` (not `uvicorn`):
 ```bash
 fastapi dev src/workflow/main.py                    # Correct: auto-reload, better errors
-# Wrong: uvicorn src.workflow.main:app
 ```
 
 ### Testing Strategy
@@ -755,14 +788,15 @@ logger.error(
 | 401/403 on protected endpoints | Generate token: `export API_BEARER_TOKEN=$(python scripts/generate_jwt.py)`, verify `Authorization: Bearer <token>` header |
 | Empty intent / Low confidence | Review `chain_analyze.md` / `chain_process.md` prompts, upgrade to Sonnet if needed |
 | HTTP 413 (request too large) | Increase `MAX_REQUEST_BODY_SIZE` in .env (max 10MB), restart server |
-| `request_id` or `user_id` missing from logs | Verify JWT auth passed before logs; middleware sets `request_id` automatically. `user_id` only present after successful authentication |
+| `request_id` or `user_id` missing from logs | Middleware sets `request_id` automatically; `user_id` only after JWT auth |
 
 For validation gate debugging, see **ARCHITECTURE.md "Validation Gates"**.
+For logging and observability, see `src/workflow/utils/CLAUDE.md`.
 
 ## Additional Resources
 
-- **ARCHITECTURE.md** - Graph structure, timeout behavior, circuit breaker, logging architecture, request ID propagation
-- **PROMPT-CHAINING.md** - Configuration tuning (temperature, token limits, cost optimization), validation gate configuration
+- **ARCHITECTURE.md** - Graph structure, timeout behavior, circuit breaker, logging architecture
+- **PROMPT-CHAINING.md** - Configuration tuning, validation gate configuration, performance guidance
 - **JWT_AUTHENTICATION.md** - Token generation, error responses, advanced auth configuration
 - **BENCHMARKS.md** - Performance data, model selection guidance
 - **README.md** - Docker deployment, usage examples
