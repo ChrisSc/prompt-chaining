@@ -2,7 +2,7 @@
 prompt-chaining workflow
 """
 
-__version__ = "0.4.2"
+__version__ = "0.4.3"
 __author__ = "Christopher Scragg"
 __email__ = "clscragg@protonmail.com"
 

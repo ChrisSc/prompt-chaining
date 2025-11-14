@@ -44,6 +44,12 @@ class ChainState(TypedDict):
     ]
     """Accumulated messages through chain - uses add_messages reducer for proper merging."""
 
+    request_id: str  # Trace ID for cross-step correlation
+    """Request ID for correlation across logs and external API calls."""
+
+    user_id: str  # User identifier from JWT sub claim
+    """User ID extracted from JWT token for user-specific tracing."""
+
     analysis: dict[str, Any] | None
     """Output from analysis step containing intent, entities, complexity."""
 

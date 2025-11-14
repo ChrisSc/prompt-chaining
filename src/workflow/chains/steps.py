@@ -112,11 +112,15 @@ async def analyze_step(state: ChainState, config: ChainConfig) -> dict[str, Any]
     # Load system prompt
     system_prompt = load_system_prompt(config.analyze.system_prompt_file)
 
-    # Initialize ChatAnthropic client
+    # Initialize ChatAnthropic client with request_id propagation to Anthropic API
+    # The request_id flows: Middleware → ContextVar → ChainState → extra_headers
+    # This enables distributed tracing by including the request ID in all Anthropic API calls,
+    # allowing correlation of Claude API logs with our internal logs for end-to-end debugging.
     llm = ChatAnthropic(
         model=config.analyze.model,
         temperature=config.analyze.temperature,
         max_tokens=config.analyze.max_tokens,
+        extra_headers={"X-Request-ID": state.get("request_id", "")},
     )
 
     # Prepare messages for LLM
@@ -242,11 +246,14 @@ async def process_step(state: ChainState, config: ChainConfig) -> dict[str, Any]
         f"Please generate content that directly addresses this intent and complexity level."
     )
 
-    # Initialize ChatAnthropic client
+    # Initialize ChatAnthropic client with request_id propagation to Anthropic API
+    # The request_id from ChainState is passed via extra_headers for distributed tracing.
+    # This allows correlation of this processing step with Anthropic API logs.
     llm = ChatAnthropic(
         model=config.process.model,
         temperature=config.process.temperature,
         max_tokens=config.process.max_tokens,
+        extra_headers={"X-Request-ID": state.get("request_id", "")},
     )
 
     # Prepare messages for LLM
@@ -390,11 +397,14 @@ async def synthesize_step(
         f"Produce a polished, formatted final response."
     )
 
-    # Initialize ChatAnthropic client for streaming
+    # Initialize ChatAnthropic client for streaming with request_id propagation to Anthropic API
+    # The request_id from ChainState is passed via extra_headers for distributed tracing.
+    # This allows correlation of the streaming synthesis step with Anthropic API logs.
     llm = ChatAnthropic(
         model=chain_config.synthesize.model,
         temperature=chain_config.synthesize.temperature,
         max_tokens=chain_config.synthesize.max_tokens,
+        extra_headers={"X-Request-ID": state.get("request_id", "")},
     )
 
     # Prepare messages for LLM

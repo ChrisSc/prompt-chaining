@@ -425,7 +425,8 @@ Standard custom fields to include:
 | --- | --- | --- | --- |
 | error | string | On any error or warning | "Configuration validation failed" |
 | error_type | string | When logging exceptions | "ValidationError", "ValueError", "JSONDecodeError" |
-| request_id | string | For correlation across logs | "req_1699123456789" |
+| request_id | string | Auto-injected for all logs | "req_1699123456789" |
+| user_id | string | Auto-injected after JWT auth | "user@example.com" |
 | step | string | For workflow steps | "analyze", "process", "synthesize", "error" |
 | service | string | For external services | "anthropic", "openai", "circuit_breaker" |
 | status_code | int | For HTTP responses and external API failures | 503, 429, 400, 401 |
@@ -438,6 +439,107 @@ Standard custom fields to include:
 | total_cost_usd | float | Total cost for operation or request | 0.000375 |
 | confidence | float | Process step quality metrics | 0.85, 0.92 |
 | content_length | int | Response size metrics | 2048, 4096 |
+
+### Trace Correlation (Request and User ID)
+
+The logging system automatically injects `request_id` and `user_id` into every log entry, enabling end-to-end tracing across the entire workflow without manual logging effort.
+
+**Automatic Injection Mechanism**
+
+Both fields are retrieved from Python `contextvars` and injected by the `JSONFormatter` in `src/workflow/utils/logging.py`:
+- **request_id**: Generated or extracted by middleware at the request boundary, stored in context via `set_request_id()`
+- **user_id**: Extracted from JWT `sub` claim during authentication, stored in context via `set_user_context()`
+- **Context Isolation**: Context variables are async-safe, automatically isolated per request/task
+
+**End-to-End Request Tracing**
+
+A single request ID flows through the entire system, enabling complete request tracing:
+
+1. **Middleware Layer**: Request enters, middleware generates/extracts request_id from `X-Request-ID` header
+2. **Authentication Layer**: JWT verified, `sub` claim extracted and stored as user_id
+3. **Workflow Steps**: All logs from analyze → process → synthesize automatically include both IDs
+4. **External API Calls**: request_id propagated to Anthropic API via `extra_headers` parameter
+5. **Error Handling**: Both IDs present in all error logs for debugging
+
+**No Manual Logging Required**
+
+Developers don't need to manually pass request_id or user_id to log calls:
+
+```python
+# BEFORE (manual approach - not needed):
+logger.info("Step completed", extra={"request_id": req_id, "user_id": user})
+
+# AFTER (automatic injection - preferred):
+logger.info("Step completed")  # request_id and user_id auto-added
+```
+
+Both fields are automatically present in all logs once the request passes authentication.
+
+**Example: Single Request Traced Across Steps**
+
+A request with `request_id: "req_1731424800123"` and `user_id: "alice@example.com"` produces correlated logs across all steps:
+
+```json
+{
+  "timestamp": "2024-11-13T10:30:45.123Z",
+  "level": "INFO",
+  "logger": "workflow.chains.steps",
+  "message": "Analysis step completed",
+  "request_id": "req_1731424800123",
+  "user_id": "alice@example.com",
+  "step": "analyze",
+  "elapsed_seconds": 1.2,
+  "total_tokens": 235
+}
+```
+
+```json
+{
+  "timestamp": "2024-11-13T10:30:47.456Z",
+  "level": "INFO",
+  "logger": "workflow.chains.steps",
+  "message": "Processing step completed",
+  "request_id": "req_1731424800123",
+  "user_id": "alice@example.com",
+  "step": "process",
+  "elapsed_seconds": 2.1,
+  "confidence": 0.87
+}
+```
+
+```json
+{
+  "timestamp": "2024-11-13T10:30:49.789Z",
+  "level": "INFO",
+  "logger": "workflow.chains.steps",
+  "message": "Synthesis step completed",
+  "request_id": "req_1731424800123",
+  "user_id": "alice@example.com",
+  "step": "synthesize",
+  "elapsed_seconds": 1.5
+}
+```
+
+**Filtering and Analysis**
+
+Query all logs for a specific request:
+```bash
+jq 'select(.request_id=="req_1731424800123")' logs.json
+```
+
+Query all activity for a specific user:
+```bash
+jq 'select(.user_id=="alice@example.com")' logs.json
+```
+
+Trace request performance across all steps:
+```bash
+jq 'select(.request_id=="req_1731424800123") | {step, elapsed_seconds}' logs.json
+```
+
+**External API Propagation**
+
+The `request_id` is also sent to the Anthropic API via `extra_headers` in all step functions, enabling correlation of Claude API logs with application logs for complete observability.
 
 ### JSON Log Format
 
@@ -544,9 +646,11 @@ LOG_FORMAT=standard  # For human-readable output
    - Good: `logger.info("Step completed", extra={"step": "analyze", "elapsed_seconds": 2.5})`
    - Avoid: `logger.info(f"Analyze step completed in {elapsed_time} seconds")`
 
-2. **Include request_id for correlation**
-   - Helps trace a single request through all logs
-   - Propagated from request context through the entire workflow
+2. **request_id and user_id are auto-injected - no manual logging needed**
+   - Both fields automatically added to all logs by JSONFormatter
+   - Retrieved from contextvars (request_id from middleware, user_id from JWT auth)
+   - No need to include in `extra={}` parameter
+   - Enable complete request tracing and user activity monitoring
 
 3. **Log errors with full exception context**
    ```python
@@ -651,6 +755,7 @@ logger.error(
 | 401/403 on protected endpoints | Generate token: `export API_BEARER_TOKEN=$(python scripts/generate_jwt.py)`, verify `Authorization: Bearer <token>` header |
 | Empty intent / Low confidence | Review `chain_analyze.md` / `chain_process.md` prompts, upgrade to Sonnet if needed |
 | HTTP 413 (request too large) | Increase `MAX_REQUEST_BODY_SIZE` in .env (max 10MB), restart server |
+| `request_id` or `user_id` missing from logs | Verify JWT auth passed before logs; middleware sets `request_id` automatically. `user_id` only present after successful authentication |
 
 For validation gate debugging, see **ARCHITECTURE.md "Validation Gates"**.
 

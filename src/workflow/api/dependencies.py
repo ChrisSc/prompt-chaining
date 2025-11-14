@@ -10,6 +10,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from workflow.config import Settings
 from workflow.utils.circuit_breaker import CircuitBreaker
 from workflow.utils.logging import get_logger
+from workflow.utils.user_context import set_user_context
 
 logger = get_logger(__name__)
 
@@ -75,9 +76,19 @@ async def verify_bearer_token(
             settings.jwt_secret_key,
             algorithms=[settings.jwt_algorithm],
         )
+
+        # Store user context at the authentication boundary for automatic propagation
+        # The user_id is extracted from the JWT "sub" claim and stored in a ContextVar.
+        # This enables:
+        # 1. Automatic injection into all logs via JSONFormatter (no manual logging)
+        # 2. Propagation to LangGraph ChainState for workflow tracking
+        # 3. Multi-tenant filtering and user-specific debugging across the entire request
+        user_id = payload.get("sub", "unknown")
+        set_user_context(user_id)
+
         logger.debug(
             "JWT token verified successfully",
-            extra={"subject": payload.get("sub", "unknown")},
+            extra={"subject": user_id},
         )
         return payload
 

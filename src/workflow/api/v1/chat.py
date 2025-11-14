@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from workflow.api.dependencies import verify_bearer_token
 from workflow.api.limiter import limiter
 from workflow.chains.graph import stream_chain
+from workflow.models.chains import ChainState
 from workflow.models.openai import (
     ChatCompletionChunk,
     ChatCompletionRequest,
@@ -24,7 +25,9 @@ from workflow.utils.message_conversion import (
     convert_langchain_chunk_to_openai,
     convert_openai_to_langchain_messages,
 )
+from workflow.utils.request_context import get_request_id
 from workflow.utils.token_tracking import aggregate_step_metrics
+from workflow.utils.user_context import get_user_context
 
 logger = get_logger(__name__)
 
@@ -137,9 +140,15 @@ async def create_chat_completion(
             # Convert OpenAI messages to LangChain format
             langchain_messages = convert_openai_to_langchain_messages(request_data.messages)
 
+            # Get request_id and user_id from context
+            request_id = get_request_id() or "unknown"
+            user_id = get_user_context() or "unknown"
+
             # Build initial state for the chain
-            initial_state = {
+            initial_state: ChainState = {
                 "messages": langchain_messages,
+                "request_id": request_id,
+                "user_id": user_id,
                 "analysis": None,
                 "processed_content": None,
                 "final_response": None,

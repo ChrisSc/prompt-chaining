@@ -10,6 +10,8 @@ import sys
 from typing import Any
 
 from workflow.config import Settings
+from workflow.utils.request_context import get_request_id
+from workflow.utils.user_context import get_user_context
 
 
 class JSONFormatter(logging.Formatter):
@@ -17,10 +19,19 @@ class JSONFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         """
-        Format a log record as JSON.
+        Format a log record as JSON with automatic context injection.
 
         Includes all standard fields plus any extra fields from record.__dict__.
-        Supports token/cost tracking fields:
+
+        Auto-injection mechanism:
+        - request_id: Retrieved from _request_id_var (contextvars) set by middleware
+        - user_id: Retrieved from _user_context_var (contextvars) set at auth boundary
+
+        This eliminates the need for manual extra={"request_id": ..., "user_id": ...}
+        parameters in every log call. The context variables provide async-safe
+        propagation throughout the entire request lifecycle.
+
+        Supports token/cost tracking fields via extra parameter:
         - input_tokens, output_tokens, total_tokens
         - input_cost_usd, output_cost_usd, total_cost_usd
 
@@ -28,7 +39,7 @@ class JSONFormatter(logging.Formatter):
             record: The log record to format
 
         Returns:
-            JSON-formatted string
+            JSON-formatted string with all fields serialized
         """
         log_data: dict[str, Any] = {
             "timestamp": self.formatTime(record),
@@ -40,9 +51,22 @@ class JSONFormatter(logging.Formatter):
         if record.exc_info:
             log_data["exception"] = self.formatException(record.exc_info)
 
-        # Include request_id if present
-        if hasattr(record, "request_id"):
-            log_data["request_id"] = record.request_id  # type: ignore
+        # Auto-inject request_id from contextvars (set by middleware)
+        # The request_id is stored in _request_id_var by RequestIDMiddleware
+        # and retrieved here for automatic inclusion in every log entry.
+        # This enables end-to-end request tracing without manual logging.
+        request_id = get_request_id()
+        if request_id:
+            log_data["request_id"] = request_id
+
+        # Auto-inject user_id from contextvars (extracted from JWT sub claim)
+        # The user_id is stored in _user_context_var at the JWT authentication boundary
+        # (verify_bearer_token function) and retrieved here for automatic inclusion.
+        # This enables multi-tenant filtering and user-specific debugging without
+        # requiring manual extra={"user_id": ...} parameters in every log call.
+        user_id = get_user_context()
+        if user_id:
+            log_data["user_id"] = user_id
 
         # Include all extra fields from the record (token/cost metrics, etc.)
         # Filter out standard LogRecord attributes
