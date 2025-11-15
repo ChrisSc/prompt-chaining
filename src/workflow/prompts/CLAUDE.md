@@ -48,12 +48,14 @@ Each system prompt file should contain:
 
 **Output Format Requirement**
 
-Every system prompt must specify that output is **ONLY JSON** with no markdown wrappers:
+Every system prompt (analyze and process steps) must specify that output is **ONLY JSON** with no markdown wrappers:
 - Output raw JSON (not inside ` ```json ... ``` ` code blocks)
 - No additional explanatory text before or after JSON
 - All required fields must be present
 - Field names must match Pydantic model exactly
 - Enum values must be from the defined set
+
+**Note on Structured Outputs**: With LangChain's `with_structured_output()` API, the Claude API itself validates schema compliance. You no longer need to worry about JSON parsing errors—the API enforces the schema. This simplifies prompts: just focus on the content, and the schema is guaranteed to be valid.
 
 ---
 
@@ -349,13 +351,72 @@ Since synthesis output streams to the user token-by-token, structure content car
 
 ---
 
+## Structured Outputs and Prompts
+
+The analyze and process steps use LangChain's `with_structured_output()` API with Pydantic models. This changes how you should structure your prompts.
+
+**Benefits of Structured Outputs**:
+- API enforces schema validation (no manual JSON parsing errors)
+- Clearer prompts (no need for markdown code block examples)
+- Type-safe outputs (IDE autocomplete in downstream code)
+- Better error messages (schema mismatch caught by API)
+
+**Prompt Writing for Structured Outputs**:
+
+Instead of showing JSON in markdown code blocks, show raw JSON examples:
+
+```
+GOOD (with structured outputs):
+Output a JSON object with:
+- intent: User's primary goal
+- key_entities: List of topics
+- complexity: "simple", "moderate", or "complex"
+
+Example:
+{
+  "intent": "Compare Python and JavaScript",
+  "key_entities": ["Python", "JavaScript", "performance"],
+  "complexity": "moderate",
+  "context": {}
+}
+
+BAD (markdown-wrapped, unnecessary with structured outputs):
+Output the following JSON in a markdown code block:
+```json
+{
+  "intent": "...",
+  "key_entities": [...],
+  "complexity": "...",
+  "context": {}
+}
+```
+```
+
+**Field Descriptions Impact**:
+
+Pydantic Field descriptions become part of the schema sent to the API. Write clear, specific descriptions:
+
+```python
+class AnalysisOutput(BaseModel):
+    intent: str = Field(description="User's primary goal")      # Good
+    intent: str = Field(description="Analyze the request")      # Too vague
+```
+
+Clear descriptions help the API understand what you want for each field, improving schema compliance.
+
+**Synthesis Step**:
+
+The synthesis step does not use structured outputs. It outputs free-form formatted text (markdown, plain, or structured format). No JSON required—just polished, formatted content for the user.
+
+---
+
 ## Quick Reference: System Prompt Files
 
-| File | Purpose | Output Model |
-| --- | --- | --- |
-| `chain_analyze.md` | Extract intent, entities, complexity | AnalysisOutput (JSON) |
-| `chain_process.md` | Generate content with confidence | ProcessOutput (JSON) |
-| `chain_synthesize.md` | Polish and format for delivery | SynthesisOutput (formatted text) |
+| File | Purpose | Output Model | Uses Structured Output |
+| --- | --- | --- | --- |
+| `chain_analyze.md` | Extract intent, entities, complexity | AnalysisOutput (JSON) | Yes |
+| `chain_process.md` | Generate content with confidence | ProcessOutput (JSON) | Yes |
+| `chain_synthesize.md` | Polish and format for delivery | Formatted text | No |
 
 ## Quick Reference: Field Requirements
 

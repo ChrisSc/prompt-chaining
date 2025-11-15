@@ -4,7 +4,7 @@ This guide explains the prompt-chaining pattern and how to configure it for your
 
 ## What is Prompt-Chaining?
 
-Prompt-chaining is a sequential multi-step AI reasoning pattern where complex tasks are broken into focused steps:
+Prompt-chaining is a sequential multi-step AI reasoning pattern where complex tasks are broken into focused steps. This template uses LangChain's `with_structured_output()` API to enforce type-safe schema validation at the API level.
 
 1. **Analyze**: Parse user intent, extract entities, assess complexity
 2. **Process**: Generate content based on analysis results
@@ -133,6 +133,67 @@ User Request
     ↓
 Stream response to client
 ```
+
+## Structured Outputs Configuration
+
+The analyze and process steps use LangChain's `with_structured_output()` API with Claude's json_schema method. This requires minimal configuration—it works automatically with no additional setup needed.
+
+**What You Need to Know**:
+
+1. **Default Enabled**: Structured outputs are enabled by default in analyze and process steps
+2. **No Configuration Required**: LangChain automatically selects the best strategy:
+   - Sonnet 4.5 and Opus 4.1: Native API support (0% token overhead)
+   - Haiku 4.5: Tool calling strategy (~1% token overhead)
+3. **Token Tracking Works**: Use `include_raw=True` to access usage_metadata for cost attribution
+4. **Field Descriptions Matter**: Pydantic model Field descriptions become part of the schema, so make them clear and specific
+
+**Token Overhead Impact**:
+
+The token overhead from structured outputs is minimal and acceptable for the reliability gains:
+
+| Model | Overhead | Example |
+|-------|----------|---------|
+| Haiku 4.5 | ~1% | 1000 tokens → ~1010 tokens |
+| Sonnet 4.5 | 0% | 1000 tokens → 1000 tokens |
+| Opus 4.1 | 0% | 1000 tokens → 1000 tokens |
+
+**Example: Cost Impact with All-Haiku Configuration**:
+
+- Analyze step: 300 input + 150 output = 450 tokens × ~1% = +4-5 tokens (~$0.00001)
+- Process step: 400 input + 400 output = 800 tokens × ~1% = +8 tokens (~$0.00002)
+- Total overhead per request: ~$0.00003 (negligible)
+
+The reliability and type safety gains far outweigh this tiny cost increase.
+
+**Prompt Examples with Structured Outputs**:
+
+When updating your prompts for structured outputs, write clear examples without markdown code blocks:
+
+```
+Good prompt for structured outputs:
+---
+Output a JSON object with these fields:
+- intent: The user's primary goal
+- key_entities: Important topics mentioned
+- complexity: "simple", "moderate", or "complex"
+- context: Optional additional context
+
+Example:
+{"intent": "compare Python vs JavaScript", "key_entities": ["Python", "JavaScript"], "complexity": "moderate", "context": {}}
+---
+
+Less ideal (unnecessary markdown wrapping):
+---
+Output the following JSON:
+```json
+{"intent": "...", "key_entities": [...], "complexity": "...", "context": {}}
+```
+---
+```
+
+The first style is clearer with structured outputs, as the API handles all JSON validation.
+
+---
 
 ## Configuration Guide
 

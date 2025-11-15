@@ -206,6 +206,63 @@ class ChainConfig(BaseModel):
 
 Timeouts set per-step—allows slow reasoning steps longer timeout than fast synthesis. Validation gates can be disabled for testing or strict mode enforced for production safety. Loaded from environment variables in `src/workflow/config.py`.
 
+## Structured Outputs and Pydantic Models
+
+The analyze and process steps use LangChain's `with_structured_output()` API with Pydantic models to enforce schema validation at the API level. This integration is seamless and transparent.
+
+**How It Works**:
+
+1. **Model Definition**: Pydantic models (AnalysisOutput, ProcessOutput) define the schema
+2. **Schema Conversion**: LangChain converts Pydantic model to JSON Schema for the API
+3. **API Enforcement**: Claude API validates response against schema (ProviderStrategy for Sonnet/Opus, ToolStrategy for Haiku)
+4. **Automatic Parsing**: LangChain deserializes JSON response into Pydantic model instance
+5. **Type Safety**: Result is fully typed Pydantic instance with validation
+
+**Token Tracking with Structured Outputs**:
+
+The `include_raw=True` parameter is critical for token tracking:
+
+```python
+# Enable structured output with raw message access
+structured_llm = llm.with_structured_output(
+    AnalysisOutput,
+    method="json_schema",
+    include_raw=True  # Essential for token tracking
+)
+
+# Invoke returns dict with 'parsed' and 'raw'
+result = await structured_llm.ainvoke(messages)
+
+# Access validated model and raw message
+analysis = result.get("parsed")      # AnalysisOutput instance
+raw_msg = result.get("raw")          # AIMessage with usage_metadata
+
+# Extract token usage from raw message
+input_tokens = raw_msg.usage_metadata.get("input_tokens", 0)
+output_tokens = raw_msg.usage_metadata.get("output_tokens", 0)
+```
+
+**Field Descriptions Matter**:
+
+With structured outputs, Pydantic Field descriptions become schema documentation visible to the API. Always include clear descriptions:
+
+```python
+class AnalysisOutput(BaseModel):
+    intent: str = Field(
+        description="User's primary goal or intent"  # Used as schema doc
+    )
+    key_entities: list[str] = Field(
+        description="Important topics, concepts, or entities mentioned"
+    )
+    complexity: str = Field(
+        description="Task complexity level: simple, moderate, or complex"
+    )
+```
+
+The API uses these descriptions to guide response generation, so clear, specific descriptions improve schema compliance.
+
+---
+
 ## Pydantic Validation Patterns
 
 All models use Pydantic 2.x validation with Field() constraints and type annotations.
