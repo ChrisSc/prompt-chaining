@@ -76,6 +76,7 @@ async def analyze_step(state: ChainState, config: ChainConfig) -> dict[str, Any]
     Analyze step: Extract intent and key information from user request.
 
     First step in prompt-chaining: parses user intent, entities, and complexity level.
+    Uses Claude's native structured output API for reliable schema validation.
 
     Args:
         state: ChainState with messages
@@ -85,8 +86,8 @@ async def analyze_step(state: ChainState, config: ChainConfig) -> dict[str, Any]
         Dict with analysis, messages, and step_metadata
 
     Raises:
-        ValidationError: If LLM response doesn't conform to AnalysisOutput schema
         ValueError: If user message cannot be extracted
+        Exception: If LLM fails or structured output validation fails
     """
     start_time = time.time()
 
@@ -123,6 +124,13 @@ async def analyze_step(state: ChainState, config: ChainConfig) -> dict[str, Any]
         extra_headers={"X-Request-ID": state.get("request_id", "")},
     )
 
+    # Enable structured output with Claude's native JSON schema API
+    # This enforces schema validation at the API level, eliminating manual JSON parsing
+    # include_raw=True returns (parsed_object, raw_message) to access token usage
+    structured_llm = llm.with_structured_output(
+        AnalysisOutput, method="json_schema", include_raw=True
+    )
+
     # Prepare messages for LLM
     messages: list[BaseMessage] = [
         SystemMessage(content=system_prompt),
@@ -130,39 +138,25 @@ async def analyze_step(state: ChainState, config: ChainConfig) -> dict[str, Any]
     ]
 
     try:
-        # Call LLM synchronously (non-streaming)
-        response = await llm.ainvoke(messages)
+        # Call LLM with structured output
+        # include_raw=True returns dict with keys: 'parsed', 'raw', 'parsing_error'
+        result = await structured_llm.ainvoke(messages)
+        analysis_output = result.get("parsed")
+        raw_message = result.get("raw")
 
-        # Extract response text
-        response_text = response.content
-
-        # Parse JSON response into AnalysisOutput
-        try:
-            # Remove markdown code blocks if present
-            if response_text.startswith("```"):
-                response_text = response_text.split("```")[1]
-                if response_text.startswith("json"):
-                    response_text = response_text[4:]
-
-            analysis_dict = json.loads(response_text.strip())
-            analysis_output = AnalysisOutput(**analysis_dict)
-
-        except (json.JSONDecodeError, ValidationError) as e:
-            logger.error(
-                "Failed to parse analysis step response",
-                extra={
-                    "step": "analyze",
-                    "error": str(e),
-                    "response_text": response_text[:500],  # Log first 500 chars
-                },
+        if not analysis_output:
+            raise ValueError(
+                f"Failed to parse analysis output. Parsing error: {result.get('parsing_error')}"
             )
-            raise
 
         # Track token usage and cost
-        usage = response.usage_metadata if hasattr(response, "usage_metadata") else None
+        usage = (
+            raw_message.usage_metadata
+            if hasattr(raw_message, "usage_metadata")
+            else None
+        )
         input_tokens = usage.get("input_tokens", 0) if usage else 0
         output_tokens = usage.get("output_tokens", 0) if usage else 0
-
         cost_metrics = calculate_cost(config.analyze.model, input_tokens, output_tokens)
 
         elapsed_time = time.time() - start_time
@@ -185,7 +179,7 @@ async def analyze_step(state: ChainState, config: ChainConfig) -> dict[str, Any]
         # Return state updates
         return {
             "analysis": analysis_output.model_dump(),
-            "messages": [response],  # Append LLM response to messages
+            "messages": [raw_message],  # Append LLM response to messages
             "step_metadata": {
                 "analyze": {
                     "elapsed_seconds": elapsed_time,
@@ -214,6 +208,7 @@ async def process_step(state: ChainState, config: ChainConfig) -> dict[str, Any]
     Process step: Generate content based on analysis results.
 
     Second step in prompt-chaining: creates substantive content addressing user intent.
+    Uses Claude's native structured output API for reliable schema validation.
 
     Args:
         state: ChainState with analysis results
@@ -223,8 +218,8 @@ async def process_step(state: ChainState, config: ChainConfig) -> dict[str, Any]
         Dict with processed_content, messages, and step_metadata
 
     Raises:
-        ValidationError: If LLM response doesn't conform to ProcessOutput schema
         ValueError: If analysis not available in state
+        Exception: If LLM fails or structured output validation fails
     """
     start_time = time.time()
 
@@ -256,6 +251,13 @@ async def process_step(state: ChainState, config: ChainConfig) -> dict[str, Any]
         extra_headers={"X-Request-ID": state.get("request_id", "")},
     )
 
+    # Enable structured output with Claude's native JSON schema API
+    # This enforces schema validation at the API level, eliminating manual JSON parsing
+    # include_raw=True returns (parsed_object, raw_message) to access token usage
+    structured_llm = llm.with_structured_output(
+        ProcessOutput, method="json_schema", include_raw=True
+    )
+
     # Prepare messages for LLM
     messages: list[BaseMessage] = [
         SystemMessage(content=system_prompt),
@@ -263,39 +265,25 @@ async def process_step(state: ChainState, config: ChainConfig) -> dict[str, Any]
     ]
 
     try:
-        # Call LLM synchronously (non-streaming)
-        response = await llm.ainvoke(messages)
+        # Call LLM with structured output
+        # include_raw=True returns dict with keys: 'parsed', 'raw', 'parsing_error'
+        result = await structured_llm.ainvoke(messages)
+        process_output = result.get("parsed")
+        raw_message = result.get("raw")
 
-        # Extract response text
-        response_text = response.content
-
-        # Parse JSON response into ProcessOutput
-        try:
-            # Remove markdown code blocks if present
-            if response_text.startswith("```"):
-                response_text = response_text.split("```")[1]
-                if response_text.startswith("json"):
-                    response_text = response_text[4:]
-
-            process_dict = json.loads(response_text.strip())
-            process_output = ProcessOutput(**process_dict)
-
-        except (json.JSONDecodeError, ValidationError) as e:
-            logger.error(
-                "Failed to parse processing step response",
-                extra={
-                    "step": "process",
-                    "error": str(e),
-                    "response_text": response_text[:500],  # Log first 500 chars
-                },
+        if not process_output:
+            raise ValueError(
+                f"Failed to parse process output. Parsing error: {result.get('parsing_error')}"
             )
-            raise
 
         # Track token usage and cost
-        usage = response.usage_metadata if hasattr(response, "usage_metadata") else None
+        usage = (
+            raw_message.usage_metadata
+            if hasattr(raw_message, "usage_metadata")
+            else None
+        )
         input_tokens = usage.get("input_tokens", 0) if usage else 0
         output_tokens = usage.get("output_tokens", 0) if usage else 0
-
         cost_metrics = calculate_cost(config.process.model, input_tokens, output_tokens)
 
         elapsed_time = time.time() - start_time
@@ -319,7 +307,7 @@ async def process_step(state: ChainState, config: ChainConfig) -> dict[str, Any]
         # Return state updates
         return {
             "processed_content": process_output.model_dump(),
-            "messages": [response],  # Append LLM response to messages
+            "messages": [raw_message],  # Append LLM response to messages
             "step_metadata": {
                 "process": {
                     "elapsed_seconds": elapsed_time,

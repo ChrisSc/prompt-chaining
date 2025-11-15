@@ -15,9 +15,9 @@ A *github repository template* for scaffolding **turnkey prompt-chaining workflo
 ![Prompt Chaining Pattern](prompt-chaining.png "Prompt Chaining Pattern")
 
 ## Key Components
-- **Analysis Agent:** Parses user intent, extracts entities, assesses complexity. Returns `AnalysisOutput`.
-- **Processing Agent:** Generates content based on analysis with confidence scoring. Returns `ProcessOutput`.
-- **Synthesis Agent:** Polishes and formats response (streaming). Returns `SynthesisOutput`.
+- **Analysis Agent:** Parses user intent, extracts entities, assesses complexity. Returns `AnalysisOutput` via structured output (LangChain `with_structured_output()`).
+- **Processing Agent:** Generates content based on analysis with confidence scoring. Returns `ProcessOutput` via structured output (LangChain `with_structured_output()`).
+- **Synthesis Agent:** Polishes and formats response (streaming). Returns formatted text without JSON wrapping.
 - **LangGraph StateGraph:** Orchestrates sequential steps with message accumulation and validation gates.
 
 ## Overview & Features
@@ -29,7 +29,7 @@ This template provides a complete foundation for prompt-chaining workflows:
 - LangGraph StateGraph orchestration with validation gates
 - Streaming responses via Server-Sent Events (SSE)
 - OpenAI-compatible API interface
-- Type-safe structured outputs
+- Type-safe structured outputs (LangChain `with_structured_output()` for analyze and process steps)
 
 **Configuration**:
 - Per-step model selection (Haiku vs. Sonnet)
@@ -142,10 +142,10 @@ LangGraph StateGraph orchestrates three sequential steps with validation gates a
 - Each step is independently configurable (model, tokens, temperature, timeout)
 
 **Key Features**:
-- **Structured Outputs**: Type-safe Pydantic models (AnalysisOutput, ProcessOutput, SynthesisOutput)
+- **Structured Outputs**: Type-safe Pydantic models with LangChain API-level validation (AnalysisOutput, ProcessOutput enforce schema)
 - **State Management**: ChainState TypedDict with `add_messages` reducer maintains conversation context
 - **Streaming**: Only synthesis step streams; earlier steps run to completion
-- **Token Tracking**: Per-step usage logged with USD cost calculation
+- **Token Tracking**: Per-step usage logged with USD cost calculation (works with `include_raw=True` for structured outputs)
 - **Error Handling**: Validation failures route gracefully to error handler
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed state flow, conditional edge logic, and token aggregation examples.
@@ -295,3 +295,11 @@ See `.env.example` for complete reference.
 - `LOG_FORMAT` - json or standard (default: json)
 
 See [CLAUDE.md](./CLAUDE.md#configuration-reference) for complete configuration reference.
+
+## Migration History
+
+For historical context on the Phase 3 Structured Outputs Migration (LangChain `with_structured_output()` integration), see:
+- **Reference Documentation**: `docs/LANGCHAIN_FALLBACK_STRATEGY.md`
+- **Archived Migration Guides**: `docs/archived-migration-guides/` for detailed planning and implementation notes
+
+Current implementation uses LangChain's structured outputs for analyze and process steps with automatic strategy selection (ProviderStrategy for Sonnet/Opus, ToolStrategy for Haiku).

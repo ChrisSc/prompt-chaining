@@ -47,7 +47,6 @@ You are the first step in a prompt-chaining workflow. Your job is to thoroughly 
 
 You must respond with ONLY valid JSON (no markdown code blocks, no extra text):
 
-```json
 {
   "intent": "user's primary goal extracted from the request",
   "key_entities": ["entity1", "entity2", "entity3"],
@@ -58,7 +57,6 @@ You must respond with ONLY valid JSON (no markdown code blocks, no extra text):
     "additional_info": "any other relevant context"
   }
 }
-```
 
 **Note**: The `complexity` field must be one of: `simple`, `moderate`, or `complex`
 

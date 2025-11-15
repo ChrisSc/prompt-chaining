@@ -70,13 +70,13 @@ This project uses nested CLAUDE.md files for context-aware, token-efficient guid
 | Task | Start Here |
 |------|------------|
 | **Adding/fixing API endpoints** | `src/workflow/api/CLAUDE.md` |
-| **Customizing prompts or adding steps** | `src/workflow/chains/CLAUDE.md`, then `src/workflow/prompts/CLAUDE.md` |
-| **Extending data models** | `src/workflow/models/CLAUDE.md` |
+| **Customizing prompts or adding steps** | `src/workflow/chains/CLAUDE.md` (see Structured Outputs Integration), then `src/workflow/prompts/CLAUDE.md` |
+| **Extending data models** | `src/workflow/models/CLAUDE.md` (note: Field descriptions are used by structured outputs) |
 | **Debugging logging issues** | `src/workflow/utils/CLAUDE.md` |
 | **Implementing middleware** | `src/workflow/middleware/CLAUDE.md` |
-| **Cost analysis or token tracking** | `src/workflow/utils/CLAUDE.md` |
+| **Cost analysis or token tracking** | `src/workflow/utils/CLAUDE.md` (works with structured outputs via `include_raw=True`) |
 | **Authentication issues** | `JWT_AUTHENTICATION.md` |
-| **Performance tuning** | `PROMPT-CHAINING.md` |
+| **Performance tuning** | `PROMPT-CHAINING.md` (includes structured outputs configuration) |
 
 ### Nested Files Directory
 
@@ -135,8 +135,10 @@ The template supports domain-specific customization at three levels:
 
 1. **System Prompts** - Edit `src/workflow/prompts/chain_*.md` files
    - Detailed patterns: see `src/workflow/prompts/CLAUDE.md`
+   - Note: Analyze and process steps use structured outputs (no manual JSON parsing needed)
 2. **Data Models** - Extend in `src/workflow/models/chains.py`
    - Model architecture: see `src/workflow/models/CLAUDE.md`
+   - Field descriptions are used by structured output schema
 3. **Configuration** - Update `.env.example` and `src/workflow/config.py`
    - Tuning guidance: see **PROMPT-CHAINING.md**
 
@@ -193,6 +195,7 @@ For performance analysis and benchmarking, see **BENCHMARKS.md**.
 | Empty intent / Low confidence | Review `chain_analyze.md` / `chain_process.md` prompts, upgrade to Sonnet if needed |
 | HTTP 413 (request too large) | Increase `MAX_REQUEST_BODY_SIZE` in .env (max 10MB), restart server |
 | `request_id` or `user_id` missing from logs | Middleware sets `request_id` automatically; `user_id` only after JWT auth |
+| Structured Output Validation Errors | Check that Pydantic model Field descriptions are present and specific; verify prompt examples match schema exactly |
 
 
 ## Additional Resources

@@ -64,7 +64,6 @@ The analysis step provides these fields to guide your generation:
 
 You must respond with ONLY valid JSON (no markdown code blocks, no extra text):
 
-```json
 {
   "content": "generated content addressing the intent with appropriate depth for the complexity level",
   "confidence": 0.85,
@@ -75,7 +74,6 @@ You must respond with ONLY valid JSON (no markdown code blocks, no extra text):
     "key_points": ["point1", "point2"]
   }
 }
-```
 
 **Field Requirements:**
 - `content`: Substantive generated text (string, at least 100 characters)

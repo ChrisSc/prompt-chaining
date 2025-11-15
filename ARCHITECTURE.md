@@ -435,6 +435,94 @@ All three prompts enforce JSON-only output:
 
 This strict format is critical for prompt-chaining workflows where structured outputs feed directly into subsequent steps.
 
+### Structured Outputs Architecture
+
+The analyze and process steps use LangChain's native `with_structured_output()` API for schema-enforced JSON validation. This is a architectural decision that improves reliability and eliminates manual JSON parsing.
+
+**Step-by-Step Breakdown**:
+
+1. **Analyze Step**: Uses structured output
+   - Input: User message
+   - Output Model: `AnalysisOutput` (Pydantic)
+   - Schema Enforcement: API validates response matches schema
+   - Token Overhead: None for Sonnet/Opus; ~1% for Haiku (tool calling)
+
+2. **Process Step**: Uses structured output
+   - Input: Analysis output
+   - Output Model: `ProcessOutput` (Pydantic)
+   - Schema Enforcement: API validates response matches schema
+   - Validation Gate: Checks confidence >= 0.5 after parsing
+
+3. **Synthesize Step**: No structured output
+   - Input: Processed content
+   - Output: Formatted text (no JSON)
+   - Why: Synthesis returns free-form formatted text, not structured data
+   - Optimal for streaming directly to user
+
+**LangChain Strategy Selection** (Automatic):
+
+```
+Model: Sonnet 4.5 or Opus 4.1
+  ↓
+ProviderStrategy (Native API Support)
+  → Uses Anthropic's json_schema method directly
+  → No token overhead
+  → Maximum performance
+
+Model: Haiku 4.5
+  ↓
+ToolStrategy (Tool Calling)
+  → Enforces schema via tool calling
+  → ~1% additional tokens (~10 tokens per 1000)
+  → Transparent to application
+```
+
+**Implementation in Steps**:
+
+```python
+# Step function (analyze or process)
+llm = ChatAnthropic(
+    model=config.analyze.model,      # Haiku, Sonnet, or Opus
+    max_tokens=config.analyze.max_tokens,
+    temperature=config.analyze.temperature,
+)
+
+# Enable structured output with raw message access
+structured_llm = llm.with_structured_output(
+    AnalysisOutput,           # Pydantic model
+    method="json_schema",     # Anthropic method
+    include_raw=True          # Essential for token tracking
+)
+
+# Invoke and extract results
+result = await structured_llm.ainvoke(messages)
+parsed_output = result.get("parsed")      # Validated model instance
+raw_message = result.get("raw")           # Raw API response
+
+# Extract tokens for cost tracking
+input_tokens = raw_message.usage_metadata.get("input_tokens", 0)
+output_tokens = raw_message.usage_metadata.get("output_tokens", 0)
+```
+
+**Benefits**:
+
+1. **API-Level Validation**: Schema enforced by Claude API, not application code
+2. **No Manual Parsing**: LangChain deserializes JSON automatically
+3. **Better Error Messages**: Schema violations caught with clear error text
+4. **Type Safety**: Parsed result is Pydantic instance (IDE autocomplete)
+5. **Token Tracking Works**: `include_raw=True` provides usage_metadata
+6. **Consistent Behavior**: Works identically across all Claude models
+
+**Token Overhead Impact**:
+
+| Model | Strategy | Overhead | Example |
+|-------|----------|----------|---------|
+| Haiku 4.5 | ToolStrategy | ~1% | 1000 tokens → ~1010 tokens |
+| Sonnet 4.5 | ProviderStrategy | 0% | 1000 tokens → 1000 tokens |
+| Opus 4.1 | ProviderStrategy | 0% | 1000 tokens → 1000 tokens |
+
+The minimal overhead is acceptable for the reliability gains from API-level schema validation.
+
 ### Validation Gates
 
 Quality enforcement between chain steps via schema and business logic validation.

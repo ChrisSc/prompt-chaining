@@ -151,6 +151,7 @@ cython_debug/
 *.pem
 *.key
 llm-docs
+docs/
 
 artifacts/
 documentation
