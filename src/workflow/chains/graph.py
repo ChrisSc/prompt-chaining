@@ -22,6 +22,7 @@ import asyncio
 import time
 import uuid
 from collections.abc import AsyncIterator
+from functools import partial
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
@@ -154,9 +155,15 @@ def build_chain_graph(config: ChainConfig) -> Any:
         },
     )
 
+    # Create a partial application of should_proceed_to_synthesize with the configured threshold
+    should_proceed_with_config = partial(
+        should_proceed_to_synthesize,
+        min_confidence=chain_config.min_confidence_threshold,
+    )
+
     graph.add_conditional_edges(
         "process",
-        should_proceed_to_synthesize,
+        should_proceed_with_config,
         {
             "synthesize": "synthesize",
             "error": "error",

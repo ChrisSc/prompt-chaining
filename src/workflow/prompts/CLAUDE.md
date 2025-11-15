@@ -55,7 +55,7 @@ Every system prompt (analyze and process steps) must specify that output is **ON
 - Field names must match Pydantic model exactly
 - Enum values must be from the defined set
 
-**Note on Structured Outputs**: With LangChain's `with_structured_output()` API, the Claude API itself validates schema compliance. You no longer need to worry about JSON parsing errors—the API enforces the schema. This simplifies prompts: just focus on the content, and the schema is guaranteed to be valid.
+**Note on Structured Outputs**: With LangChain's `with_structured_output()` API, the Claude API itself validates schema compliance. JSON formatting instructions (like "output raw JSON, no markdown blocks") are redundant—the API handles this automatically. Focus prompts on content quality, not output formatting.
 
 ---
 
@@ -292,10 +292,19 @@ Processing depth should match the analysis complexity level:
 
 **Validation Gate: Confidence Threshold**
 
-Processing validation gate checks: `confidence >= 0.5`
-- If confidence >= 0.5: Content passes to synthesis step
-- If confidence < 0.5: Validation fails, request returns error
-- This threshold is configurable in `CHAIN_STRICT_VALIDATION` setting
+Processing validation gate checks: `confidence >= min_confidence_threshold`
+- Default threshold: 0.5 (configurable via `CHAIN_MIN_CONFIDENCE_THRESHOLD`)
+- If confidence >= threshold: Content passes to synthesis step
+- If confidence < threshold: Validation fails, request returns error
+- Threshold is configurable per deployment for domain-specific quality requirements
+
+To customize:
+```bash
+# In .env file
+CHAIN_MIN_CONFIDENCE_THRESHOLD=0.7  # Require 70% confidence
+```
+
+This allows stricter quality control in production while permissive thresholds in development.
 
 ---
 

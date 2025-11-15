@@ -188,3 +188,9 @@ class ChainConfig(BaseModel):
         default=False,
         description="Enforce strict validation - fail on validation errors vs. warnings",
     )
+    min_confidence_threshold: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Minimum confidence score required to pass process validation gate (0.0-1.0)",
+    )

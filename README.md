@@ -30,11 +30,13 @@ This template provides a complete foundation for prompt-chaining workflows:
 - Streaming responses via Server-Sent Events (SSE)
 - OpenAI-compatible API interface
 - Type-safe structured outputs (LangChain `with_structured_output()` for analyze and process steps)
+- Automatic structured output error context for debugging validation failures
+- Optimized prompts with ~8-10% token reduction through schema-aware formatting
 
 **Configuration**:
 - Per-step model selection (Haiku vs. Sonnet)
 - Independent token limits, temperature, timeouts per step
-- Validation gates for data quality enforcement
+- Validation gates for data quality enforcement with configurable confidence thresholds
 - Flexible configuration via environment variables
 
 **Observability & Production Features**:

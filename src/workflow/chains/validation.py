@@ -125,13 +125,19 @@ class ProcessValidationGate(ValidationGate):
     Validates that the processing step produces valid ProcessOutput with:
     - Valid schema conformance (via parent class)
     - Non-empty content
-    - Confidence score >= 0.5
+    - Confidence score >= configured threshold (default 0.5)
     - Properly structured process results
     """
 
-    def __init__(self) -> None:
-        """Initialize the processing validation gate."""
+    def __init__(self, min_confidence: float = 0.5) -> None:
+        """
+        Initialize the processing validation gate.
+
+        Args:
+            min_confidence: Minimum confidence threshold (0.0-1.0)
+        """
         super().__init__(ProcessOutput)
+        self.min_confidence = min_confidence
 
     def validate(self, data: dict[str, Any]) -> tuple[bool, str | None]:
         """
@@ -160,13 +166,13 @@ class ProcessValidationGate(ValidationGate):
             )
             return False, error_msg
 
-        # Business logic validation: confidence must be >= 0.5
+        # Business logic validation: confidence must be >= configured threshold
         confidence = data.get("confidence")
-        if not isinstance(confidence, (int, float)) or confidence < 0.5:
+        if not isinstance(confidence, (int, float)) or confidence < self.min_confidence:
             error_msg = (
-                f"Processing validation failed: 'confidence' must be >= 0.5. "
+                f"Processing validation failed: 'confidence' must be >= {self.min_confidence}. "
                 f"Current value: {confidence}. "
-                f"The processing step must produce content with at least 50% confidence in its quality."
+                f"The processing step must produce content with at least {self.min_confidence*100:.0f}% confidence in its quality."
             )
             return False, error_msg
 
@@ -231,7 +237,7 @@ def should_proceed_to_process(state: ChainState) -> str:
     return "process"
 
 
-def should_proceed_to_synthesize(state: ChainState) -> str:
+def should_proceed_to_synthesize(state: ChainState, min_confidence: float = 0.5) -> str:
     """
     Conditional edge function: validate processing output before proceeding to synthesis.
 
@@ -240,6 +246,7 @@ def should_proceed_to_synthesize(state: ChainState) -> str:
 
     Args:
         state: Current state of the LangGraph execution
+        min_confidence: Minimum confidence threshold (0.0-1.0)
 
     Returns:
         str: "synthesize" if processing validation passed, "error" if it failed
@@ -266,8 +273,8 @@ def should_proceed_to_synthesize(state: ChainState) -> str:
     else:
         processed_dict = processed_content
 
-    # Validate processing output
-    gate = ProcessValidationGate()
+    # Validate processing output with configured threshold
+    gate = ProcessValidationGate(min_confidence=min_confidence)
     is_valid, error_message = gate.validate(processed_dict)
 
     if not is_valid:

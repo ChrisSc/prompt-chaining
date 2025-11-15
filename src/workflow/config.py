@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     api_host: str = Field(default="0.0.0.0", description="API server host address")
     api_port: int = Field(default=8000, description="API server port")
     api_title: str = Field(default="Prompt Chaining Workflow", description="API title")
-    api_version: str = Field(default="0.4.5", description="API version")
+    api_version: str = Field(default="0.4.6", description="API version")
 
     # Environment
     environment: str = Field(
@@ -279,6 +279,12 @@ class Settings(BaseSettings):
         default=False,
         description="Enforce strict validation in prompt-chaining steps",
     )
+    chain_min_confidence_threshold: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Minimum confidence score required to pass process validation gate (0.0-1.0)",
+    )
 
     @computed_field
     @property
@@ -370,4 +376,5 @@ class Settings(BaseSettings):
             synthesize_timeout=self.chain_synthesize_timeout,
             enable_validation=self.chain_enable_validation,
             strict_validation=self.chain_strict_validation,
+            min_confidence_threshold=self.chain_min_confidence_threshold,
         )
