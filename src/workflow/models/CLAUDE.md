@@ -202,9 +202,15 @@ class ChainConfig(BaseModel):
     synthesize_timeout: int = Field(default=20, ge=1, le=270)
     enable_validation: bool = Field(default=True)
     strict_validation: bool = Field(default=False)
+    min_confidence_threshold: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Minimum confidence score for process validation gate (0.0-1.0)"
+    )
 ```
 
-Timeouts set per-step—allows slow reasoning steps longer timeout than fast synthesis. Validation gates can be disabled for testing or strict mode enforced for production safety. Loaded from environment variables in `src/workflow/config.py`.
+Timeouts set per-step—allows slow reasoning steps longer timeout than fast synthesis. Validation gates can be disabled for testing or strict mode enforced for production safety. Confidence threshold controls quality gates in the process validation gate. Loaded from environment variables in `src/workflow/config.py`.
 
 ## Structured Outputs and Pydantic Models
 

@@ -322,6 +322,35 @@ Does your task primarily extract/parse information?
 4. **Reduce limits if needed**: Check actual token consumption, adjust max_tokens down
 5. **Tune temperature**: Lower temperature (0.3-0.5) = shorter, more consistent responses
 
+## Confidence Threshold Tuning
+
+The `CHAIN_MIN_CONFIDENCE_THRESHOLD` controls quality gates between the process and synthesis steps:
+
+**Default (0.5)**: Suitable for most use cases
+- Allows content with moderate confidence to proceed
+- Good balance of quality and throughput
+- Recommended starting point for exploration and general use
+
+**Higher thresholds (0.7-0.9)**: For critical applications
+- Medical diagnosis: 0.8+ recommended (high stakes for errors)
+- Financial advice: 0.9+ recommended (regulatory compliance)
+- Legal document review: 0.85+ recommended (liability sensitive)
+- Blocks more requests, requires human review fallback for rejected content
+
+**Lower thresholds (0.0-0.3)**: For exploratory use cases
+- Creative writing: 0.2-0.3 acceptable (speculative content welcome)
+- Brainstorming: 0.1-0.3 acceptable (generating ideas, not final product)
+- Content exploration: 0.0-0.2 acceptable (accept all generated content)
+- Maximize throughput, accept lower quality certainty
+
+To configure:
+```bash
+# In .env file
+CHAIN_MIN_CONFIDENCE_THRESHOLD=0.7  # Require 70% confidence
+```
+
+---
+
 ## Validation Gates for Quality Control
 
 Validation gates enforce data quality between steps and prevent bad data from cascading.

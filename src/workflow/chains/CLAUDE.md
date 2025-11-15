@@ -150,12 +150,34 @@ except ValidationError as e:
             "step": "analyze",
             "error": str(e),
             "error_type": type(e).__name__,
+            "raw_response_preview": response_text[:1000] if response_text else "",
+            "parsing_error": str(e),
         },
     )
     raise  # Let LangGraph route to error step
 ```
 
-Note: `json.JSONDecodeError` no longer occurs with structured outputs—API-level validation eliminates manual JSON parsing. `ValidationError` still possible if LLM response doesn't match schema. Exceptions are logged with full context then re-raised so LangGraph conditional edges route to error handling.
+Note: `json.JSONDecodeError` no longer occurs with structured outputs—API-level validation eliminates manual JSON parsing. `ValidationError` still possible if LLM response doesn't match schema. Exceptions are logged with full context including raw response preview for debugging.
+
+**Error Context Logging**:
+
+When structured output validation fails, error logs capture:
+- `raw_response_preview`: First 1000 characters of LLM response
+- `parsing_error`: Validation error details from LangChain
+- `error_type`: Python exception type (ValidationError, ValueError, etc.)
+
+Example error log:
+```json
+{
+  "step": "analyze",
+  "error": "Field required: intent",
+  "error_type": "ValidationError",
+  "raw_response_preview": "{\"key_entities\": [...], \"complexity\": \"moderate\"}",
+  "parsing_error": "1 validation error for AnalysisOutput\nintent\n  Field required"
+}
+```
+
+This enables rapid debugging of prompt issues by showing what the LLM actually returned.
 
 ## Validation Gate Design
 

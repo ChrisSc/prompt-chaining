@@ -40,6 +40,7 @@ cp .env.example .env && edit .env                   # Add ANTHROPIC_API_KEY and 
 | `CHAIN_*_TEMPERATURE` | Per-step temperature (0.0-2.0) | 0.5-0.7 |
 | `CHAIN_*_TIMEOUT` | Per-step timeout (1-270s) | 15-30s |
 | `CHAIN_ENABLE_VALIDATION`, `CHAIN_STRICT_VALIDATION` | Validation gates | true, false |
+| `CHAIN_MIN_CONFIDENCE_THRESHOLD` | Minimum confidence for validation gate | 0.5 (0.0-1.0) |
 | `MAX_REQUEST_BODY_SIZE` | Request size limit | 1MB (1-10MB) |
 
 For detailed configuration tuning, see **PROMPT-CHAINING.md**.
@@ -196,6 +197,7 @@ For performance analysis and benchmarking, see **BENCHMARKS.md**.
 | HTTP 413 (request too large) | Increase `MAX_REQUEST_BODY_SIZE` in .env (max 10MB), restart server |
 | `request_id` or `user_id` missing from logs | Middleware sets `request_id` automatically; `user_id` only after JWT auth |
 | Structured Output Validation Errors | Check that Pydantic model Field descriptions are present and specific; verify prompt examples match schema exactly |
+| Low confidence blocking synthesis | Adjust `CHAIN_MIN_CONFIDENCE_THRESHOLD` in .env (default 0.5); review process step prompt quality; verify confidence scoring is realistic |
 
 
 ## Additional Resources
