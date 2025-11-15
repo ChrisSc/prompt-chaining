@@ -98,6 +98,21 @@ CHAIN_MIN_CONFIDENCE_THRESHOLD=0.3
 - Prompt simplification removes ~40-50 lines of boilerplate while preserving domain logic
 - Validation gates use functools.partial for clean config passing in LangGraph edges
 
+### Files Changed
+- `.env.example` - Added CHAIN_MIN_CONFIDENCE_THRESHOLD documentation
+- `src/workflow/config.py` - Added chain_min_confidence_threshold field
+- `src/workflow/models/chains.py` - Added min_confidence_threshold to ChainConfig
+- `src/workflow/chains/validation.py` - Made ProcessValidationGate threshold configurable
+- `src/workflow/chains/graph.py` - Use functools.partial for config passing
+- `src/workflow/chains/steps.py` - Enhanced error logging with raw_response_preview
+- `src/workflow/prompts/chain_analyze.md` - Removed redundant JSON instructions
+- `src/workflow/prompts/chain_process.md` - Removed redundant JSON instructions
+- Documentation: CLAUDE.md, PROMPT-CHAINING.md, README.md, 6 nested CLAUDE.md files
+- Tests: 21 integration tests with comprehensive coverage and 100% pass rate
+
+### Release Status
+✅ **PRODUCTION READY** - Merged to main via PR #18
+
 ## [0.2.0] - 2025-11-04
 
 ### Added
