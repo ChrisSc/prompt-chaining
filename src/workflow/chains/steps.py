@@ -192,12 +192,23 @@ async def analyze_step(state: ChainState, config: ChainConfig) -> dict[str, Any]
         }
 
     except Exception as e:
+        # Extract raw response for debugging structured output failures
+        raw_content = None
+        parsing_error = None
+        if 'result' in locals():
+            raw_msg = result.get("raw")
+            if raw_msg and hasattr(raw_msg, "content"):
+                raw_content = str(raw_msg.content)[:1000]
+            parsing_error = result.get("parsing_error")
+
         logger.error(
             "Analysis step failed",
             extra={
                 "step": "analyze",
                 "error": str(e),
                 "error_type": type(e).__name__,
+                "raw_response_preview": raw_content,
+                "parsing_error": parsing_error,
             },
         )
         raise
@@ -321,12 +332,23 @@ async def process_step(state: ChainState, config: ChainConfig) -> dict[str, Any]
         }
 
     except Exception as e:
+        # Extract raw response for debugging structured output failures
+        raw_content = None
+        parsing_error = None
+        if 'result' in locals():
+            raw_msg = result.get("raw")
+            if raw_msg and hasattr(raw_msg, "content"):
+                raw_content = str(raw_msg.content)[:1000]
+            parsing_error = result.get("parsing_error")
+
         logger.error(
             "Processing step failed",
             extra={
                 "step": "process",
                 "error": str(e),
                 "error_type": type(e).__name__,
+                "raw_response_preview": raw_content,
+                "parsing_error": parsing_error,
             },
         )
         raise

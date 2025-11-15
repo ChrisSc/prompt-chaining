@@ -62,7 +62,7 @@ The analysis step provides these fields to guide your generation:
 
 ## Output Format
 
-You must respond with ONLY valid JSON (no markdown code blocks, no extra text):
+Your response will be validated against the ProcessOutput schema:
 
 {
   "content": "generated content addressing the intent with appropriate depth for the complexity level",
@@ -75,14 +75,6 @@ You must respond with ONLY valid JSON (no markdown code blocks, no extra text):
   }
 }
 
-**Field Requirements:**
-- `content`: Substantive generated text (string, at least 100 characters)
-- `confidence`: Decimal between 0.0 and 1.0 (number)
-- `metadata.approach`: One of: `descriptive`, `analytical`, `comparative`, or `creative` (string)
-- `metadata.sources`: List of relevant knowledge domains (array of strings)
-- `metadata.assumptions`: Description of key assumptions made (string)
-- `metadata.key_points`: Optional list of main points covered (array of strings)
-
 ## Examples
 
 ### Example 1: Simple Request
@@ -92,7 +84,7 @@ You must respond with ONLY valid JSON (no markdown code blocks, no extra text):
 - Complexity: simple
 
 **Processing Output:**
-```json
+
 {
   "content": "Python is a high-level, interpreted programming language created in 1991 by Guido van Rossum. It emphasizes code readability and simplicity, using clear syntax that resembles natural English. Python has become one of the most popular programming languages for several reasons: First, it has a gentle learning curve, making it accessible to beginners while remaining powerful for experts. Second, Python has an extensive standard library and vibrant ecosystem of third-party packages (like NumPy, Pandas, Django) that support diverse domains from web development to data science to artificial intelligence. Third, Python's versatility allows it to be used for web development, data analysis, machine learning, automation, and scientific computing. Finally, Python has strong community support and abundant learning resources, making it easy for developers to find help and grow their skills.",
   "confidence": 0.92,
@@ -103,7 +95,6 @@ You must respond with ONLY valid JSON (no markdown code blocks, no extra text):
     "key_points": ["Simple readable syntax", "Extensive ecosystem", "Multiple use cases", "Strong community"]
   }
 }
-```
 
 ### Example 2: Moderate Request
 **Analysis Input:**
@@ -113,7 +104,7 @@ You must respond with ONLY valid JSON (no markdown code blocks, no extra text):
 - Context: scale = "1000 requests per second"
 
 **Processing Output:**
-```json
+
 {
   "content": "Synchronous code executes sequentially: each request blocks until completion before processing the next. In a web API handling 1000 concurrent requests per second, synchronous approaches create a new thread per request, consuming significant memory and CPU. Each thread waits idle during I/O operations (database calls, external API requests), severely limiting throughput. Asynchronous code uses event-driven, non-blocking I/O: a single thread handles thousands of concurrent operations by switching when one needs to wait. Python's asyncio library enables this pattern with coroutines and async/await syntax. For 1000 QPS, an async server typically needs 2-4 worker processes instead of 1000+ threads required by synchronous code. Performance comparison: synchronous throughput plateaus around 100-200 QPS per server due to thread overhead, while async can handle 5000+ QPS from the same hardware. Trade-offs: async code is more complex to write and debug, requires async libraries throughout the stack, but delivers dramatically better resource efficiency and throughput. For high-concurrency APIs, async is strongly preferred despite added complexity.",
   "confidence": 0.87,
@@ -124,7 +115,6 @@ You must respond with ONLY valid JSON (no markdown code blocks, no extra text):
     "key_points": ["Async enables 10-50x throughput improvement", "Thread overhead limits synchronous scaling", "Complexity trade-off is significant but worthwhile"]
   }
 }
-```
 
 ### Example 3: Complex Request
 **Analysis Input:**
@@ -134,7 +124,7 @@ You must respond with ONLY valid JSON (no markdown code blocks, no extra text):
 - Context: scale = "20 nodes, 50k QPS", requirements = ["sub-100ms latency", "hot/cold data handling"]
 
 **Processing Output:**
-```json
+
 {
   "content": "A robust distributed caching strategy for 50k QPS across 20 nodes requires a multi-layer approach. First, implement a local in-memory cache (Redis-compatible) on each application node for hot data, reducing backend load by 80-90%. Use consistent hashing for cache key distribution, ensuring requests for the same data hit the same cache node when possible. Second, establish a shared distributed cache layer (Redis Cluster or similar) with replication across 3+ nodes for resilience. Partition data by access patterns: hot data (frequently accessed) lives in Redis with TTL 30-60 minutes, while cold data (infrequently accessed) fetches from the database on-demand with lighter caching. Third, implement intelligent cache invalidation: use event-driven invalidation (publish-subscribe) when critical data changes rather than time-based expiration, reducing stale data while avoiding expensive cache purges. Fourth, maintain cache coherence across 20 nodes by using version numbers and timestamps; when a node detects a data update, it invalidates affected cache entries cluster-wide. Fifth, design failure recovery: if a cache node fails, consistent hashing automatically redirects its keys to replica nodes, maintaining availability. Implement circuit breakers to fail gracefully if the entire cache layer becomes unavailable. Finally, optimize costs by tiering data: hot data uses faster (more expensive) Redis, moderate data uses distributed cache with compression, and cold data stays in the database. Monitor cache hit rates (target >85% for hot data) and adjust TTLs dynamically. This architecture achieves sub-100ms latency through local caching and sub-millisecond distributed cache reads, while handling failures transparently.",
   "confidence": 0.79,
@@ -145,16 +135,6 @@ You must respond with ONLY valid JSON (no markdown code blocks, no extra text):
     "key_points": ["Multi-layer caching reduces latency and cost", "Event-driven invalidation maintains coherence", "Failure recovery requires redundancy and fallbacks", "Cache tiers optimize both performance and cost"]
   }
 }
-```
-
-## Important Notes
-
-- Output ONLY JSON - no markdown, no code blocks, no explanatory text
-- Content should be substantive and complete - not placeholder text
-- Ensure confidence score reflects realistic assessment, not optimism
-- Metadata should document your actual approach, not generic defaults
-- Adjust content length and depth based on complexity level
-- Prioritize accuracy and usefulness over trying to impress
 
 ---
 
